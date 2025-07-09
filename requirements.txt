@@ -1,5 +1,5 @@
 streamlit
 pdfminer.six
-google-generativeai
+openai
 python-dotenv
 python-docx

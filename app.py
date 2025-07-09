@@ -524,6 +524,16 @@ def set_custom_css():
             box-shadow: 0 4px 12px rgba(0, 77, 168, 0.3);
             color: white !important;
         }
+        input:focus, select:focus, textarea:focus {
+        outline: none !important;
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+    }
+
+    /* Remove red border for invalid inputs */
+    input:invalid, select:invalid {
+        border: 1px solid #ccc !important;
+    }
 
         /* Professional expander styling */
         .streamlit-expander > div[role="button"] {
@@ -557,10 +567,20 @@ def set_custom_css():
         }
 
         /* Professional header styling */
-        h1, h2, h3, h4, h5, h6 {
+        h2, h3, h4, h5, h6 {
             font-family: 'Montserrat', sans-serif !important;
             color: #004DA8 !important;
             font-weight: 700;
+            margin-top: 1.8em;
+            margin-bottom: 0.8em;
+            text-shadow: 1px 1px 2px rgba(0, 77, 168, 0.1);
+            animation: slideIn 0.8s ease-out;
+        }
+        h1{
+            font-family: 'Montserrat', sans-serif !important;
+            color: #004DA8 !important;
+            font-size: 2.5rem;
+            font-weight: 750;
             margin-top: 1.8em;
             margin-bottom: 0.8em;
             text-shadow: 1px 1px 2px rgba(0, 77, 168, 0.1);
@@ -760,6 +780,13 @@ def set_custom_css():
     color: white !important;
 }
 
+    
+
+    /* Make sure Streamlit content is not covered */
+    .main > div {
+        padding-top: 20px;
+    }
+
 .stButton > button:hover {
     color: white !important;
 }
@@ -813,7 +840,7 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
         
         /* Professional file uploader styling */
         .stFileUploader label {
-            color: black !important;
+            color: #2f3b4a !important;
             font-weight: 600;
         }
         
@@ -955,8 +982,7 @@ def main():
     # Apply custom CSS
     set_custom_css()
 
-    st.title("Document Formula Extractor")
-    st.markdown("Your tool to **automatically extract mathematical formulas** from insurance policy documents using advanced AI capabilities.")
+
 
     # Initialize session state
     if 'extraction_result' not in st.session_state:
@@ -1166,6 +1192,54 @@ def main():
         """,
         unsafe_allow_html=True
     )
+    st.set_page_config(
+    page_title="Document Formula Extractor",
+    page_icon="https://raw.githubusercontent.com/AyushiR0y/streamlit_formulagen/main/assets/logo.png",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom header bar with logo and title
+st.markdown(
+    """
+    <style>
+        .header-container {
+            padding: 1rem 0;
+        }
+
+        .header-bar {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background-color: white; /* Optional: to contrast with shadow */
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Soft gray shadow */
+        }
+
+        .header-title {
+            font-size: 2.5rem;
+            font-weight: 750;
+            color: #004DA8 !important;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+        }
+
+        .header-bar img {
+            height: 100px;
+        }
+    </style>
+
+    <div class="header-container">
+        <div class="header-bar">
+            <img src="https://raw.githubusercontent.com/AyushiR0y/streamlit_formulagen/main/assets/logo.png">
+            <div class="header-title">Document Formula Extractor</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 
 if __name__ == "__main__":
