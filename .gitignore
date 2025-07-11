@@ -69,3 +69,5 @@ static_collected/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.env
