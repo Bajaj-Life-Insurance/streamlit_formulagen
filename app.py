@@ -13,9 +13,11 @@ import time
 import traceback
 from pathlib import Path
 import pandas as pd # Import pandas for cleaner table display
+from dotenv import load_dotenv
 
-# Load environment variables
+
 load_dotenv()
+
 
 # Configuration
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
