@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 
 load_dotenv()
-
+print("ENV:", os.environ.get("OPENAI_API_KEY"))
 
 # Configuration
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
