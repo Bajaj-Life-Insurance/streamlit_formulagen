@@ -12,12 +12,14 @@ import hashlib
 import time
 import traceback
 from pathlib import Path
-import pandas as pd # Import pandas for cleaner table display
-from dotenv import load_dotenv
+import pandas as pd
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+import numpy as np
+from collections import defaultdict
 
 
 load_dotenv()
-print("ENV:", os.environ.get("OPENAI_API_KEY"))
 
 # Configuration
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
@@ -31,6 +33,25 @@ if not API_KEY:
 else:
     client = OpenAI(api_key=API_KEY)
     MOCK_MODE = False
+
+# --- STABLE CHUNKING CONFIGURATION ---
+STABLE_CHUNK_CONFIG = {
+    'chunk_size': 1500,  # Stable chunk sizede
+    'chunk_overlap': 300,  # 20% overlap ratio
+    'max_chunks_per_formula': 5,  # Limit chunks processed per formula
+    'relevance_threshold': 0.3,  # Minimum relevance score
+    'min_chunk_size': 500,  # Minimum viable chunk size
+    'max_context_length': 4000,  # Maximum context for API calls
+}
+
+# --- QUOTA MANAGEMENT CONFIGURATION ---
+QUOTA_CONFIG = {
+    'max_retries': 3,
+    'retry_delay': 5,  # seconds
+    'fallback_enabled': True,
+    'batch_size': 5,  # Process formulas in batches
+    'emergency_stop_after_failures': 10,  # Stop after this many consecutive failures
+}
 
 # --- INPUT VARIABLES DEFINITIONS ---
 INPUT_VARIABLES = {
@@ -113,309 +134,475 @@ class DocumentExtractionResult:
     def to_dict(self):
         return asdict(self)
 
-class DocumentFormulaExtractor:
-    """Extracts formulas purely from document content without hardcoded formulas"""
+class StableChunkedDocumentFormulaExtractor:
+    """Extracts formulas from large documents using stable chunking ratios"""
 
     def __init__(self, target_outputs: List[str]):
         self.input_variables = INPUT_VARIABLES
         self.basic_derived = BASIC_DERIVED_FORMULAS
-        self.target_outputs = target_outputs # Now dynamic
+        self.target_outputs = target_outputs
+        self.config = STABLE_CHUNK_CONFIG
+        self.quota_config = QUOTA_CONFIG
+        self.failure_count = 0  # Track consecutive failures
+        
+        # Initialize text splitter with stable configuration
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.config['chunk_size'],
+            chunk_overlap=self.config['chunk_overlap'],
+            length_function=len,
+            separators=["\n\n", "\n", ".", "!", "?", " ", ""]
+        )
+        
+        # Formula keywords for relevance scoring
+        self.formula_keywords = {
+            'high_priority': ['surrender', 'gsv', 'ssv', 'formula', 'calculate', 'premium', 'benefit'],
+            'medium_priority': ['paid-up', 'maturity', 'death', 'sum assured', 'charge', 'value'],
+            'low_priority': ['policy', 'term', 'amount', 'date', 'factor', 'rate']
+        }
+
+    def _extract_formula_offline(self, formula_name: str, context: str) -> Optional[ExtractedFormula]:
+        """Offline formula extraction using pattern matching as fallback"""
+        
+        # Common formula patterns to look for
+        formula_patterns = {
+            'equals': r'([A-Z_]+)\s*[=:]\s*([^.\n]+)',
+            'calculation': r'([A-Z_]+)\s*(?:is calculated|calculated as|=|:)\s*([^.\n]+)',
+            'formula': r'(?:formula|calculation)\s*(?:for|of)\s*([A-Z_]+)[:\s]*([^.\n]+)',
+            'definition': r'([A-Z_]+)\s*(?:means|refers to|defined as)\s*([^.\n]+)'
+        }
+        
+        # Search for the specific formula name
+        formula_lower = formula_name.lower()
+        context_lower = context.lower()
+        
+        # Look for direct mentions
+        if formula_lower in context_lower:
+            # Find the sentence containing the formula
+            sentences = context.split('.')
+            relevant_sentences = []
+            
+            for sentence in sentences:
+                if formula_lower in sentence.lower():
+                    relevant_sentences.append(sentence.strip())
+            
+            if relevant_sentences:
+                # Try to extract formula from relevant sentences
+                for sentence in relevant_sentences:
+                    for pattern_name, pattern in formula_patterns.items():
+                        matches = re.findall(pattern, sentence, re.IGNORECASE)
+                        if matches:
+                            # Found a potential formula
+                            formula_expr = matches[0][1] if len(matches[0]) > 1 else matches[0][0]
+                            
+                            # Extract variables mentioned in the formula
+                            variables_found = []
+                            for var in self.input_variables.keys():
+                                if var.lower() in formula_expr.lower():
+                                    variables_found.append(var)
+                            
+                            return ExtractedFormula(
+                                formula_name=formula_name.upper(),
+                                formula_expression=formula_expr.strip(),
+                                variants_info="Extracted using offline pattern matching",
+                                business_context=f"Offline extraction for {formula_name}",
+                                confidence=0.3,  # Lower confidence for offline extraction
+                                source_method='offline_pattern_matching',
+                                document_evidence=sentence[:200] + "..." if len(sentence) > 200 else sentence,
+                                specific_variables={var: self.input_variables[var] for var in variables_found}
+                            )
+        
+        # If no direct match found, return None
+        return None
 
     def extract_formulas_from_document(self, text: str) -> DocumentExtractionResult:
-        """Extract all formulas from document text"""
-
+        """Extract formulas from large document using stable chunking strategy"""
+        
         if MOCK_MODE or not API_KEY:
             return self._explain_no_extraction()
 
         try:
-            st.info("🔍 Starting document-based formula extraction...")
-
-            # Progress bar
             progress_bar = st.progress(0)
 
-            # First, analyze document structure and identify formula sections
+            # Step 1: Create stable chunks
             progress_bar.progress(10)
-            formula_sections = self._identify_formula_sections(text)
+            chunks = self._create_stable_chunks(text)
+    
 
-            # Extract surrender value formula with special focus
+            # Step 2: Score and rank chunks
             progress_bar.progress(20)
-            surrender_result = self._extract_surrender_formula_specifically(text)
+            scored_chunks = self._score_chunks_for_relevance(chunks)
 
-            # Extract all other formulas from document
+            # Step 3: Check API status before starting
+            if not self._check_api_status():
+                st.error("❌ API is not accessible. Using offline extraction only.")
+                return self._fallback_to_offline_extraction(text)
+
+            # Step 4: Extract formulas using quota-aware batching
+            progress_bar.progress(30)
             extracted_formulas = []
-            target_outputs_for_loop = [f.upper() for f in self.target_outputs]
-
-            total_formulas = len(target_outputs_for_loop)
-
-            for i, formula_name in enumerate(target_outputs_for_loop):
-                # Ensure surrender_value is not extracted twice if already handled
-                if formula_name.lower() == 'surrender_value' and surrender_result:
-                    continue
-
-                progress_bar.progress(20 + int((i / total_formulas) * 70))
-
-                formula_result = self._extract_formula_from_document(text, formula_name, formula_sections)
-                if formula_result:
-                    extracted_formulas.append(formula_result)
-
-                time.sleep(0.1)  # Rate limiting
-
-            # Add the specifically extracted surrender result if it exists and hasn't been added
-            if surrender_result and not any(f.formula_name == 'SURRENDER_VALUE' for f in extracted_formulas):
-                extracted_formulas.insert(0, surrender_result) # Add it to the beginning for prominence
+            total_formulas = len(self.target_outputs)
             
+            # Process formulas in batches to manage quota
+            batch_size = self.quota_config['batch_size']
+            for batch_start in range(0, len(self.target_outputs), batch_size):
+                batch_end = min(batch_start + batch_size, len(self.target_outputs))
+                batch_formulas = self.target_outputs[batch_start:batch_end]
+                
+                
+                for i, formula_name in enumerate(batch_formulas):
+                    overall_progress = 30 + int(((batch_start + i) / total_formulas) * 60)
+                    progress_bar.progress(overall_progress)
+                    
+                    # Check if we should stop due to too many failures
+                    if self.failure_count >= self.quota_config['emergency_stop_after_failures']:
+                        st.error(f"🛑 Emergency stop: {self.failure_count} consecutive failures. Switching to offline mode.")
+                        remaining_formulas = self.target_outputs[batch_start + i:]
+                        for remaining_formula in remaining_formulas:
+                            offline_result = self._extract_formula_offline(remaining_formula, text)
+                            if offline_result:
+                                extracted_formulas.append(offline_result)
+                        break
+                    
+                    # Use stable extraction for each formula
+                    formula_result = self._extract_formula_stable(
+                        formula_name, scored_chunks, text
+                    )
+                    
+                    if formula_result:
+                        extracted_formulas.append(formula_result)
+                        self.failure_count = 0  # Reset failure count on success
+                    else:
+                        self.failure_count += 1
+                    
+                    # Progressive rate limiting based on success/failure
+                    if formula_result:
+                        time.sleep(0.5)  # Successful extraction
+                    else:
+                        time.sleep(1.0)  # Failed extraction, wait longer
+                
+                # Check if emergency stop was triggered
+                if self.failure_count >= self.quota_config['emergency_stop_after_failures']:
+                    break
+                    
+                # Inter-batch delay to manage quota
+                if batch_end < len(self.target_outputs):
+                    time.sleep(self.quota_config['retry_delay'])
+
             progress_bar.progress(100)
+            
+            overall_conf = (
+                sum(f.confidence for f in extracted_formulas) / len(extracted_formulas) 
+                if extracted_formulas else 0.0
+            )
 
-            # Calculate overall confidence
-            overall_conf = sum(f.confidence for f in extracted_formulas) / len(extracted_formulas) if extracted_formulas else 0.0
-
-            st.success("✅ Formula extraction complete!")
 
             return DocumentExtractionResult(
                 input_variables=self.input_variables,
                 basic_derived_formulas=self.basic_derived,
                 extracted_formulas=extracted_formulas,
-                extraction_summary=f"Document analysis complete. Successfully identified {len(extracted_formulas)} formulas from your document.",
+                extraction_summary=f"Stable chunked analysis complete. Successfully identified {len(extracted_formulas)} formulas from {len(chunks)} stable chunks using {self.config['chunk_size']} char chunks with {self.config['chunk_overlap']} overlap.",
                 overall_confidence=overall_conf,
             )
             
         except Exception as e:
-            st.error(f"❌ **Document extraction failed:** {e}")
-            st.exception(e) # Display full traceback for debugging
+            st.error(f"❌ **Stable chunked extraction failed:** {e}")
+            st.exception(e)
             return self._explain_no_extraction()
-    
-    def _identify_formula_sections(self, text: str) -> List[str]:
-        """Identify sections of document that contain formulas"""
-        
-        prompt = f"""
-        Analyze this insurance document and identify all sections that contain mathematical formulas, calculations, or surrender value computations.
-        
-        DOCUMENT: {text}
-        
-        TASK: Extract ONLY the text sections that contain:
-        1. Mathematical formulas (with = signs, calculations)
-        2. Surrender value calculations (GSV, SSV, SSV1, SSV2, SSV3)
-        3. Benefit calculations
-        4. Premium calculations
-        5. Any text that shows how values are computed
-        
-        Return each relevant section as a separate block.
-        Focus especially on surrender value, GSV, SSV, paid-up calculations.
-        
-        FORMAT: Return sections separated by "---SECTION---"
-        """
-        
+
+    def _check_api_status(self) -> bool:
+        """Check if API is accessible with a minimal request"""
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Test"}],
+                max_tokens=1
             )
-            
-            response_text = response.choices[0].message.content
-            sections = response_text.split("---SECTION---")
-            return [section.strip() for section in sections if section.strip()]
-            
+            return True
         except Exception as e:
-            st.error(f"Error identifying formula sections: {e}")
-            return [text]
+            st.warning(f"API check failed: {e}")
+            return False
+
+    def _fallback_to_offline_extraction(self, text: str) -> DocumentExtractionResult:
+        """Complete offline extraction when API is unavailable"""
         
-    def _extract_formula_from_document(self, text: str, formula_name: str, formula_sections: List[str]) -> Optional[ExtractedFormula]:
-        """Extract specific formula from document sections with variable identification"""
+        st.info("🔄 Falling back to offline pattern-based extraction...")
         
-        search_text = "\n".join(formula_sections) if formula_sections else text
+        extracted_formulas = []
         
-        ssv_context = ""
-        # Convert formula_name to lower for robust comparison
-        if formula_name.lower() in ['ssv1_amt', 'ssv2_amt', 'ssv3_amt']:
-            ssv_context = """
-            NOTE: For SSV (Special Surrender Value) components:
-            - SSV1 typically relates to present value of paid-up sum assured on death
-            - SSV2 typically relates to ROP (Return of Premium) or Total Premiums paid benefit
-            - SSV3 typically relates to paid-up income instalments or survival benefits
-            Look for these specific components in the surrender value calculations.
-            """
+        for formula_name in self.target_outputs:
+            offline_result = self._extract_formula_offline(formula_name, text)
+            if offline_result:
+                extracted_formulas.append(offline_result)
         
-        prompt = f"""
-        Extract the formula for "{formula_name}" from this insurance document content.
+        overall_conf = (
+            sum(f.confidence for f in extracted_formulas) / len(extracted_formulas) 
+            if extracted_formulas else 0.0
+        )
         
-        DOCUMENT CONTENT: {search_text}
+        return DocumentExtractionResult(
+            input_variables=self.input_variables,
+            basic_derived_formulas=self.basic_derived,
+            extracted_formulas=extracted_formulas,
+            extraction_summary=f"Offline pattern-based extraction complete. Found {len(extracted_formulas)} formulas using pattern matching (API unavailable).",
+            overall_confidence=overall_conf,
+        )
+
+    def _create_stable_chunks(self, text: str) -> List[Dict]:
+        """Create stable chunks with consistent ratios"""
         
-        AVAILABLE VARIABLES: {list(self.input_variables.keys())}
-        BASIC DERIVED: {self.basic_derived}
+        # Split text using stable configuration
+        text_chunks = self.text_splitter.split_text(text)
         
-        TARGET: Find how "{formula_name}" is calculated in this document.
-        {ssv_context}
+        stable_chunks = []
+        for i, chunk_text in enumerate(text_chunks):
+            # Only include chunks that meet minimum size requirement
+            if len(chunk_text) >= self.config['min_chunk_size']:
+                chunk_data = {
+                    'id': i,
+                    'text': chunk_text,
+                    'char_count': len(chunk_text),
+                    'word_count': len(chunk_text.split()),
+                    'relevance_score': 0.0,  # Will be calculated later
+                    'chunk_ratio': len(chunk_text) / len(text),  # Stable ratio
+                    'position_ratio': i / len(text_chunks),  # Position in document
+                }
+                stable_chunks.append(chunk_data)
         
-        INSTRUCTIONS:
-        1. Look for explicit formulas, calculation methods, or mathematical relationships
-        2. Express using only the available variable names above. Prioritize exact variable names, if not found, use a descriptive placeholder.
-        3. IDENTIFY ONLY THE SPECIFIC VARIABLES used in this formula
-        4. Extract exact supporting text from document
-        5. If not explicitly stated but can be logically derived from context, derive it
-        6. If truly not found or derivable, return "NOT_FOUND"
+        return stable_chunks
+
+    def _score_chunks_for_relevance(self, chunks: List[Dict]) -> List[Dict]:
+        """Score chunks for relevance using stable metrics"""
         
-        RESPONSE FORMAT:
-        FORMULA: [mathematical expression using only relevant variables]
-        SPECIFIC_VARIABLES: [comma-separated list of variables actually used in this formula]
-        DOCUMENT_EVIDENCE: [exact text that supports this]
-        CONTEXT: [business explanation]
-        METHOD: [EXPLICIT/DERIVED/NOT_FOUND]
-        CONFIDENCE: [0.1-1.0]
-        """
-        
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
+        for chunk in chunks:
+            text_lower = chunk['text'].lower()
+            score = 0.0
             
-            response_text = response.choices[0].message.content
+            # High priority keywords (weight: 3)
+            for keyword in self.formula_keywords['high_priority']:
+                score += text_lower.count(keyword) * 3
             
-            if "NOT_FOUND" in response_text:
-                return None
-                
-            return self._parse_formula_response(response_text, formula_name)
+            # Medium priority keywords (weight: 2)
+            for keyword in self.formula_keywords['medium_priority']:
+                score += text_lower.count(keyword) * 2
             
-        except Exception as e:
-            st.error(f"Error extracting {formula_name}: {e}")
+            # Low priority keywords (weight: 1)
+            for keyword in self.formula_keywords['low_priority']:
+                score += text_lower.count(keyword) * 1
+            
+            # Normalize score by chunk length
+            normalized_score = score / (chunk['word_count'] / 100)
+            
+            # Apply position bonus (earlier chunks often contain definitions)
+            position_bonus = 1.0 - (chunk['position_ratio'] * 0.3)
+            
+            chunk['relevance_score'] = normalized_score * position_bonus
+        
+        # Sort by relevance score (highest first)
+        return sorted(chunks, key=lambda x: x['relevance_score'], reverse=True)
+
+    def _extract_formula_stable(self, formula_name: str, scored_chunks: List[Dict], full_text: str) -> Optional[ExtractedFormula]:
+        """Extract formula using stable chunking approach"""
+        
+        # Select top relevant chunks for this formula
+        relevant_chunks = self._select_relevant_chunks_for_formula(
+            formula_name, scored_chunks
+        )
+        
+        if not relevant_chunks:
             return None
-    
-    def _extract_surrender_formula_specifically(self, text: str) -> Optional[ExtractedFormula]:
-        """Special focused extraction for surrender value formula"""
+        
+        # Combine selected chunks with stable context length
+        combined_context = self._combine_chunks_stable(relevant_chunks)
+        
+        # Extract formula using focused prompt
+        return self._extract_formula_with_context(formula_name, combined_context)
+
+    def _select_relevant_chunks_for_formula(self, formula_name: str, scored_chunks: List[Dict]) -> List[Dict]:
+        """Select most relevant chunks for specific formula"""
+        
+        formula_specific_keywords = {
+            'surrender': ['surrender', 'gsv', 'ssv', 'cash', 'quit'],
+            'premium': ['premium', 'payment', 'annual', 'monthly'],
+            'benefit': ['benefit', 'payout', 'income', 'amount'],
+            'death': ['death', 'mortality', 'sum assured'],
+            'maturity': ['maturity', 'endowment', 'maturity date'],
+            'charge': ['charge', 'fee', 'deduction', 'cost']
+        }
+        
+        # Find relevant keyword category
+        relevant_keywords = []
+        for category, keywords in formula_specific_keywords.items():
+            if any(keyword in formula_name.lower() for keyword in keywords):
+                relevant_keywords.extend(keywords)
+        
+        # Score chunks specifically for this formula
+        formula_scored_chunks = []
+        for chunk in scored_chunks:
+            text_lower = chunk['text'].lower()
+            formula_score = chunk['relevance_score']  # Base score
+            
+            # Add formula-specific scoring
+            for keyword in relevant_keywords:
+                if keyword in text_lower:
+                    formula_score += 2.0
+            
+            # Check for formula name mentions
+            if formula_name.lower() in text_lower:
+                formula_score += 5.0
+            
+            chunk_copy = chunk.copy()
+            chunk_copy['formula_score'] = formula_score
+            formula_scored_chunks.append(chunk_copy)
+        
+        # Sort by formula-specific score
+        formula_scored_chunks.sort(key=lambda x: x['formula_score'], reverse=True)
+        
+        # Select top chunks that meet threshold
+        selected_chunks = []
+        for chunk in formula_scored_chunks:
+            if (len(selected_chunks) < self.config['max_chunks_per_formula'] and 
+                chunk['formula_score'] >= self.config['relevance_threshold']):
+                selected_chunks.append(chunk)
+        
+        return selected_chunks
+
+    def _combine_chunks_stable(self, chunks: List[Dict]) -> str:
+        """Combine chunks with stable context length management"""
+        
+        combined_text = ""
+        current_length = 0
+        max_length = self.config['max_context_length']
+        
+        for chunk in chunks:
+            chunk_text = chunk['text']
+            
+            # Check if adding this chunk would exceed max length
+            if current_length + len(chunk_text) > max_length:
+                # Truncate the chunk to fit
+                remaining_space = max_length - current_length
+                if remaining_space > 200:  # Only add if meaningful space left
+                    chunk_text = chunk_text[:remaining_space] + "..."
+                    combined_text += f"\n\n--- Chunk {chunk['id']} ---\n{chunk_text}"
+                break
+            
+            combined_text += f"\n\n--- Chunk {chunk['id']} ---\n{chunk_text}"
+            current_length += len(chunk_text)
+        
+        return combined_text
+
+    def _extract_formula_with_context(self, formula_name: str, context: str) -> Optional[ExtractedFormula]:
+        """Extract formula using stable context and focused prompt with fallback options"""
+        
+        # List of models to try in order (cheapest to most expensive)
+        models_to_try = ["gpt-3.5-turbo", "gpt-4o-mini", "gpt-4"]
         
         prompt = f"""
-        CRITICAL TASK: Extract the surrender value calculation formula from this insurance document.
-        
-        DOCUMENT: {text}
-        
-        AVAILABLE INPUT VARIABLES: {list(self.input_variables.keys())}
-        BASIC DERIVED FORMULAS: {self.basic_derived}
-        
-        REQUIREMENTS:
-        1. Find the EXACT surrender value calculation method from the document
-        2. Express formula using only the available variable names above. Prioritize exact variable names, if not found, use a descriptive placeholder.
-        3. IDENTIFY ONLY THE SPECIFIC VARIABLES used in surrender value calculation
-        4. If document mentions GSV (Guaranteed Surrender Value) and SSV (Special Surrender Value), show relationship
-        5. If multiple variants exist, show all variants
-        6. Extract the ACTUAL text from document that describes this calculation.
-        7. ROP= Total premiums paid. Display total premiums in the formula wherever ROP is used.
-        
+        Extract the calculation formula for "{formula_name}" from the following document content.
+
+        DOCUMENT CONTENT:
+        {context}
+
+        AVAILABLE VARIABLES:
+        {', '.join(self.input_variables.keys())}
+
+        TASK:
+        1. Find the mathematical formula or calculation method for {formula_name}
+        2. Use only the available variables listed above
+        3. Extract the exact formula expression
+        4. Provide supporting evidence from the document
+        5. If no formula is found, respond with "FORMULA_NOT_FOUND"
+
         RESPONSE FORMAT:
-        SURRENDER_FORMULA: [exact mathematical expression using available variables]
-        SPECIFIC_VARIABLES: [comma-separated list of variables actually used]
-        VARIANTS: [if multiple calculation methods exist]
-        DOCUMENT_EVIDENCE: [exact text from document that supports this formula]
-        BUSINESS_LOGIC: [explanation of when/how this applies]
-        CONFIDENCE: [0.1-1.0 based on clarity in document]
-        
-        If surrender value is not clearly defined in document, respond with "NOT_FOUND"
+        FORMULA_EXPRESSION: [mathematical expression using available variables]
+        VARIABLES_USED: [comma-separated list of variables from available list]
+        DOCUMENT_EVIDENCE: [exact text from document supporting this formula]
+        BUSINESS_CONTEXT: [brief explanation of what this formula calculates]
+        CONFIDENCE_LEVEL: [number between 0.1 and 1.0]
+
+        Respond with only the requested format.
         """
         
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            response_text = response.choices[0].message.content
-            
-            if "NOT_FOUND" in response_text:
-                return None
+        for model in models_to_try:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=600,
+                    temperature=0.1,
+                    top_p=0.95
+                )
                 
-            return self._parse_surrender_response(response_text)
-            
-        except Exception as e:
-            st.error(f"Error extracting surrender formula: {e}")
-            return None
-    
-    def _parse_surrender_response(self, response_text: str) -> Optional[ExtractedFormula]:
-        """Parse surrender formula response"""
+                response_text = response.choices[0].message.content
+                
+                if "FORMULA_NOT_FOUND" in response_text:
+                    return None
+                
+                return self._parse_stable_formula_response(response_text, formula_name)
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg or "quota" in error_msg.lower():
+                    st.warning(f"⚠️ Quota/rate limit for {model}. Trying fallback...")
+                    time.sleep(2)  # Brief pause before trying next model
+                    continue
+                elif "404" in error_msg or "model" in error_msg.lower():
+                    st.warning(f"⚠️ Model {model} not available. Trying fallback...")
+                    continue
+                else:
+                    st.error(f"❌ Error with {model} for {formula_name}: {e}")
+                    continue
+        
+        # If all models fail, try offline extraction
+        st.warning(f"⚠️ All API models failed for {formula_name}. Attempting offline extraction...")
+        return self._extract_formula_offline(formula_name, context)
+
+    def _parse_stable_formula_response(self, response_text: str, formula_name: str) -> Optional[ExtractedFormula]:
+        """Parse formula response with stable extraction"""
         
         try:
-            formula_match = re.search(r'SURRENDER_FORMULA:\s*(.+?)(?=\nSPECIFIC_VARIABLES|$)', response_text, re.DOTALL | re.IGNORECASE)
+            # Extract formula expression
+            formula_match = re.search(r'FORMULA_EXPRESSION:\s*(.+?)(?=\nVARIABLES_USED|$)', response_text, re.DOTALL | re.IGNORECASE)
             formula_expression = formula_match.group(1).strip() if formula_match else "Formula not clearly defined"
             
-            variables_match = re.search(r'SPECIFIC_VARIABLES:\s*(.+?)(?=\nVARIANTS|$)', response_text, re.DOTALL | re.IGNORECASE)
-            specific_vars_str = variables_match.group(1).strip() if variables_match else ""
-            specific_variables = self._parse_specific_variables(specific_vars_str)
+            # Extract variables used
+            variables_match = re.search(r'VARIABLES_USED:\s*(.+?)(?=\nDOCUMENT_EVIDENCE|$)', response_text, re.DOTALL | re.IGNORECASE)
+            variables_str = variables_match.group(1).strip() if variables_match else ""
+            specific_variables = self._parse_variables_stable(variables_str)
             
-            variants_match = re.search(r'VARIANTS:\s*(.+?)(?=\nDOCUMENT_EVIDENCE|$)', response_text, re.DOTALL | re.IGNORECASE)
-            variants_info = variants_match.group(1).strip() if variants_match else "Single method"
+            # Extract document evidence
+            evidence_match = re.search(r'DOCUMENT_EVIDENCE:\s*(.+?)(?=\nBUSINESS_CONTEXT|$)', response_text, re.DOTALL | re.IGNORECASE)
+            document_evidence = evidence_match.group(1).strip() if evidence_match else "No supporting evidence found"
             
-            evidence_match = re.search(r'DOCUMENT_EVIDENCE:\s*(.+?)(?=\nBUSINESS_LOGIC|$)', response_text, re.DOTALL | re.IGNORECASE)
-            document_evidence = evidence_match.group(1).strip() if evidence_match else "Evidence not extracted"
-            
-            logic_match = re.search(r'BUSINESS_LOGIC:\s*(.+?)(?=\nCONFIDENCE|$)', response_text, re.DOTALL | re.IGNORECASE)
-            business_context = logic_match.group(1).strip() if logic_match else "Surrender value calculation"
-            
-            confidence_match = re.search(r'CONFIDENCE:\s*([0-9]*\.?[0-9]+)', response_text, re.IGNORECASE)
-            confidence = float(confidence_match.group(1)) if confidence_match else 0.5
-            
-            return ExtractedFormula(
-                formula_name='SURRENDER_VALUE',
-                formula_expression=formula_expression,
-                variants_info=variants_info,
-                business_context=business_context,
-                confidence=confidence,
-                source_method='document_extraction',
-                document_evidence=document_evidence,
-                specific_variables=specific_variables
-            )
-            
-        except Exception as e:
-            st.error(f"Error parsing surrender response: {e}")
-            return None
-    
-    def _parse_formula_response(self, response_text: str, formula_name: str) -> Optional[ExtractedFormula]:
-        """Parse general formula response"""
-        
-        try:
-            formula_match = re.search(r'FORMULA:\s*(.+?)(?=\nSPECIFIC_VARIABLES|$)', response_text, re.DOTALL | re.IGNORECASE)
-            formula_expression = formula_match.group(1).strip() if formula_match else "Formula not found"
-            
-            variables_match = re.search(r'SPECIFIC_VARIABLES:\s*(.+?)(?=\nDOCUMENT_EVIDENCE|$)', response_text, re.DOTALL | re.IGNORECASE)
-            specific_vars_str = variables_match.group(1).strip() if variables_match else ""
-            specific_variables = self._parse_specific_variables(specific_vars_str)
-            
-            evidence_match = re.search(r'DOCUMENT_EVIDENCE:\s*(.+?)(?=\nCONTEXT|$)', response_text, re.DOTALL | re.IGNORECASE)
-            document_evidence = evidence_match.group(1).strip() if evidence_match else "No supporting text found"
-            
-            context_match = re.search(r'CONTEXT:\s*(.+?)(?=\nMETHOD|$)', response_text, re.DOTALL | re.IGNORECASE)
+            # Extract business context
+            context_match = re.search(r'BUSINESS_CONTEXT:\s*(.+?)(?=\nCONFIDENCE_LEVEL|$)', response_text, re.DOTALL | re.IGNORECASE)
             business_context = context_match.group(1).strip() if context_match else f"Calculation for {formula_name}"
             
-            method_match = re.search(r'METHOD:\s*(.+?)(?=\nCONFIDENCE|$)', response_text, re.IGNORECASE)
-            method = method_match.group(1).strip() if method_match else "UNKNOWN"
-            
-            confidence_match = re.search(r'CONFIDENCE:\s*([0-9]*\.?[0-9]+)', response_text, re.IGNORECASE)
-            confidence = float(confidence_match.group(1)) if confidence_match else 0.3
+            # Extract confidence level
+            confidence_match = re.search(r'CONFIDENCE_LEVEL:\s*([0-9]*\.?[0-9]+)', response_text, re.IGNORECASE)
+            confidence = float(confidence_match.group(1)) if confidence_match else 0.4
             
             return ExtractedFormula(
                 formula_name=formula_name.upper(),
                 formula_expression=formula_expression,
-                variants_info=f"Extraction method: {method}",
+                variants_info="Extracted using stable chunking approach",
                 business_context=business_context,
-                confidence=confidence,
-                source_method='document_extraction',
-                document_evidence=document_evidence,
+                confidence=min(confidence, 1.0),  # Cap at 1.0
+                source_method='stable_chunked_extraction',
+                document_evidence=document_evidence[:500],  # Limit evidence length
                 specific_variables=specific_variables
             )
             
         except Exception as e:
-            st.error(f"Error parsing formula response for {formula_name}: {e}")
+            st.error(f"Error parsing response for {formula_name}: {e}")
             return None
-    
-    def _parse_specific_variables(self, variables_str: str) -> Dict[str, str]:
-        """Parse specific variables from comma-separated string"""
+
+    def _parse_variables_stable(self, variables_str: str) -> Dict[str, str]:
+        """Parse variables with stable approach"""
         
         specific_variables = {}
         if variables_str:
-            var_names = [var.strip() for var in variables_str.split(',')]
+            # Clean and split variables
+            var_names = [var.strip().upper() for var in variables_str.split(',')]
             
             for var_name in var_names:
                 if var_name in self.input_variables:
@@ -423,47 +610,60 @@ class DocumentFormulaExtractor:
                 elif var_name in self.basic_derived:
                     specific_variables[var_name] = self.basic_derived[var_name]
                 else:
-                    specific_variables[var_name] = f"Variable used in calculation: {var_name}"
+                    # Try to find partial matches
+                    for input_var in self.input_variables:
+                        if var_name in input_var or input_var in var_name:
+                            specific_variables[input_var] = self.input_variables[input_var]
+                            break
         
         return specific_variables
-    
+
     def _explain_no_extraction(self) -> DocumentExtractionResult:
         """Explain that extraction cannot be performed without API key"""
-        
         return DocumentExtractionResult(
             input_variables=self.input_variables,
             basic_derived_formulas=self.basic_derived,
             extracted_formulas=[],
-            extraction_summary="Cannot extract formulas from document. A valid `OPENAI_API_KEY` is required to enable advanced document analysis and formula extraction. This system is designed to identify complex calculations, especially for surrender values, directly from your provided insurance policy documents.",
+            extraction_summary="Cannot extract formulas from document. A valid `OPENAI_API_KEY` is required to enable stable chunked document analysis and formula extraction.",
             overall_confidence=0.0,
         )
 
 def extract_text_from_file(file_bytes, file_extension):
-    """Extract text from supported file formats"""
+    """Extract text from supported file formats with better error handling"""
     try:
         if file_extension == '.pdf':
-            # Create a temporary file for PDF processing
             with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
                 tmp_file.write(file_bytes)
                 tmp_file_path = tmp_file.name
             
             try:
                 text = extract_text_from_pdf_lib(tmp_file_path)
-                os.unlink(tmp_file_path)  # Clean up
+                os.unlink(tmp_file_path)
+                
+                # Log document size for stable chunking
+                if len(text) > 50000:
+                    st.info(f"📊 Document size: {len(text)} characters. Using stable chunking with {STABLE_CHUNK_CONFIG['chunk_size']} char chunks.")
+                
                 return text
             except Exception as e:
-                os.unlink(tmp_file_path)  # Clean up on error
+                os.unlink(tmp_file_path)
                 raise e
         
         elif file_extension == '.txt':
-            return file_bytes.decode('utf-8')
+            text = file_bytes.decode('utf-8')
+            if len(text) > 50000:
+                st.info(f"📊 Text file size: {len(text)} characters. Using stable chunking.")
+            return text
         
         elif file_extension == '.docx':
             try:
                 import docx
                 from io import BytesIO
                 doc = docx.Document(BytesIO(file_bytes))
-                return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+                if len(text) > 50000:
+                    st.info(f"📊 Word document size: {len(text)} characters. Using stable chunking.")
+                return text
             except ImportError:
                 st.error("`python-docx` not installed. Please install it: `pip install python-docx`")
                 return ""
@@ -475,7 +675,9 @@ def extract_text_from_file(file_bytes, file_extension):
         st.error(f"Error extracting text from file: {e}")
         return ""
 
-
+# Usage example:
+# extractor = StableChunkedDocumentFormulaExtractor(DEFAULT_TARGET_OUTPUT_VARIABLES)
+# result = extractor.extract_formulas_from_document(document_text)
 
 # --- UI Styling and Helper Functions ---
 def set_custom_css():
@@ -703,7 +905,7 @@ def set_custom_css():
             border: 1px solid #e0e0e0;
             padding: 8px 12px;
             transition: all 0.2s ease;
-            color: #f7fbff !important;
+            color: #14212e !important;
             background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
         }
         .stTextInput input:focus {
@@ -977,6 +1179,7 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
 def main():
     st.set_page_config(
         page_title="Document Formula Extractor",
+        page_icon="https://github.com/AyushiR0y/streamlit_formulagen/raw/64b69f5e22fdd673d9ae58fdee24700687b372c1/assets/Dragnfly.png",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -984,7 +1187,96 @@ def main():
     # Apply custom CSS
     set_custom_css()
 
+    # Custom header bar with logo and title
+    st.markdown(
+        """
+        <style>
+            .header-container {
+                padding: 1rem 0;
+            }
 
+            .header-bar {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                background-color: white;
+                padding: 1rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            }
+
+            .header-title {
+                font-size: 2.5rem;
+                font-weight: 750;
+                color: #004DA8 !important;
+                font-family: 'Segoe UI', sans-serif;
+                margin: 0;
+            }
+
+            .header-bar img {
+                height: 100px;
+            }
+
+            .formula-table {
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                overflow: hidden;
+                background-color: white;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                margin-bottom: 1rem;
+            }
+
+            .formula-table-header {
+                background-color: #f8f9fa;
+                border-bottom: 2px solid #e0e0e0;
+                padding: 0.75rem;
+                font-weight: 600;
+                font-size: 1.1rem;
+                color: #004DA8;
+            }
+
+            .formula-row {
+                padding: 0.5rem 0.75rem;
+                border-bottom: 1px solid #e0e0e0;
+            }
+
+            .formula-row:last-child {
+                border-bottom: none;
+            }
+
+            .formula-row:hover {
+                background-color: #f8f9fa;
+            }
+
+            .add-formula-section {
+                margin-top: 1rem;
+                padding: 1rem;
+                background-color: transparent;
+                border: none;
+            }
+
+            .add-formula-title {
+                font-size: 1.2rem;
+                font-weight: 600;
+                color: #004DA8;
+                margin-bottom: 1rem;
+            }
+
+            .section-divider {
+                margin: 2rem 0;
+                border-bottom: 1px solid #e0e0e0;
+            }
+        </style>
+
+        <div class="header-container">
+            <div class="header-bar">
+                <img src="https://raw.githubusercontent.com/AyushiR0y/streamlit_formulagen/main/assets/logo.png">
+                <div class="header-title">Document Formula Extractor</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Initialize session state
     if 'extraction_result' not in st.session_state:
@@ -993,21 +1285,23 @@ def main():
         st.session_state.selected_output_variables = DEFAULT_TARGET_OUTPUT_VARIABLES.copy()
     if 'custom_output_variable' not in st.session_state:
         st.session_state.custom_output_variable = ""
-    # Ensure custom variables list exists
     if 'user_defined_output_variables' not in st.session_state:
         st.session_state.user_defined_output_variables = []
+    if 'formulas' not in st.session_state:
+        st.session_state.formulas = []
+    if 'formulas_saved' not in st.session_state:
+        st.session_state.formulas_saved = False
+    if 'editing_formula' not in st.session_state:
+        st.session_state.editing_formula = -1  # -1 means no formula is being edited
 
-
-    # --- Main Content Area ---
-    st.markdown("---") # Separator for main content
+    # Main Content Area
+    st.markdown("---")
 
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        
-
         # Output Variable Selection
-        st.subheader(" Select Target Formulas")
+        st.subheader("Select Target Formulas")
         st.markdown("Choose which formulas you want to extract from the document. You can also add custom ones!")
 
         # Combine default and user-defined variables for the multiselect options
@@ -1029,24 +1323,23 @@ def main():
             help="Enter a specific formula name you want to extract, even if it's not in the default list. Press 'Add' to include it."
         )
 
-        if st.button(" Add Custom Formula", key="add_custom_formula_button"):
+        if st.button("Add Custom Formula", key="add_custom_formula_button"):
             new_var = st.session_state.custom_output_variable.strip()
             if new_var and new_var not in st.session_state.user_defined_output_variables and new_var not in DEFAULT_TARGET_OUTPUT_VARIABLES:
                 st.session_state.user_defined_output_variables.append(new_var)
-                # Also automatically select the newly added variable
                 if new_var not in st.session_state.selected_output_variables:
                     st.session_state.selected_output_variables.append(new_var)
-                st.session_state.custom_output_variable = "" # Clear input after adding
+                st.session_state.custom_output_variable = ""
                 st.success(f"'{new_var}' added and selected!")
-                st.rerun() # Rerun to update the multiselect widget
+                st.rerun()
             elif new_var in st.session_state.user_defined_output_variables or new_var in DEFAULT_TARGET_OUTPUT_VARIABLES:
                 st.info(f"'{new_var}' is already in the list of available formulas.")
             else:
                 st.warning("Please enter a valid custom formula name to add.")
 
-        st.markdown("---") # Visual separation
+        st.markdown("---")
 
-        st.subheader("⬆ Upload Product Specifications")
+        st.subheader("Upload Product Specifications")
         st.markdown("Upload your insurance policy document (PDF, TXT, DOCX) to begin formula extraction.")
 
         uploaded_file = st.file_uploader(
@@ -1062,9 +1355,9 @@ def main():
                 st.session_state.extraction_result = None
                 return
 
-            st.info(f" **File Selected:** `{uploaded_file.name}` (`{uploaded_file.size / 1024:.1f} KB`)")
+            st.info(f"**File Selected:** `{uploaded_file.name}` (`{uploaded_file.size / 1024:.1f} KB`)")
 
-            if st.button(" Analyze Document", type="primary", key="analyze_button"):
+            if st.button("Analyze Document", type="primary", key="analyze_button"):
                 if not st.session_state.selected_output_variables:
                     st.warning("Please select at least one target formula to extract or add a custom one.")
                     st.session_state.extraction_result = None
@@ -1075,23 +1368,36 @@ def main():
                     text = extract_text_from_file(uploaded_file.read(), file_extension)
 
                     if not text.strip():
-                        st.error("❗ Could not extract readable text from the uploaded file. Please ensure it contains text content.")
+                        st.error("Could not extract readable text from the uploaded file. Please ensure it contains text content.")
                         st.session_state.extraction_result = None
                         return
 
                     # Only proceed with extraction if API key is configured
                     if not MOCK_MODE and API_KEY:
-                        extractor = DocumentFormulaExtractor(target_outputs=st.session_state.selected_output_variables)
+                        # Console logging - these messages will only appear in PowerShell
+                        
+                        
+                        extractor = StableChunkedDocumentFormulaExtractor(target_outputs=st.session_state.selected_output_variables)
                         extraction_result = extractor.extract_formulas_from_document(text)
+                                                
                         st.session_state.extraction_result = extraction_result
+                        # Convert to editable format
+                        st.session_state.formulas = [
+                            {
+                                "formula_name": formula.formula_name,
+                                "formula_expression": formula.formula_expression
+                            } for formula in extraction_result.extracted_formulas
+                        ]
+                        st.session_state.formulas_saved = False
+                        st.session_state.editing_formula = -1  # Reset editing state
                     else:
-                        st.session_state.extraction_result = None # Clear result if no API key
-                        st.warning("⚠️ Cannot perform extraction without a configured OPENAI_API_KEY.")
+                        st.session_state.extraction_result = None
+                        st.warning("Cannot perform extraction without a configured OPENAI_API_KEY.")
         else:
             st.session_state.extraction_result = None
 
     with col2:
-        st.subheader(" Reference Variables")
+        st.subheader("Reference Variables")
         st.markdown("These variables provide context for the AI during formula identification. Expand sections below to view details.")
 
         # Using individual expanders for each category to keep it compact
@@ -1107,7 +1413,6 @@ def main():
 
         with st.expander("Currently Selected Target Output Variables", expanded=True):
             st.markdown("The system will actively **search for and extract formulas** corresponding to these variables from your document.")
-            # Ensure only unique variables are shown in case of custom additions
             current_targets = sorted(list(set(st.session_state.selected_output_variables)))
             if current_targets:
                 target_data = [{"Target Variable": var} for var in current_targets]
@@ -1117,7 +1422,7 @@ def main():
 
     st.markdown("---")
 
-    # --- Display Results ---
+    # Display Results
     if st.session_state.extraction_result:
         st.subheader("Extraction Summary")
 
@@ -1125,46 +1430,160 @@ def main():
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            st.metric(label="Total Formulas Found", value=len(result.extracted_formulas), help="Number of distinct formulas successfully extracted.")
+            st.metric(label="Total Formulas Found", value=len(st.session_state.formulas), help="Number of distinct formulas successfully extracted.")
         with col_s2:
             st.metric(label="Overall Confidence", value=f"{result.overall_confidence:.1%}", help="Average confidence score across all extracted formulas.")
 
         st.info(result.extraction_summary)
 
-        if result.extracted_formulas:
-            st.subheader(" Detailed Formula Overview")
-            st.markdown("Review the extracted formulas, their expressions, and supporting evidence.")
+        if st.session_state.formulas:
+            st.subheader("Formula Overview")
+            st.markdown("Review and edit the extracted formulas. You can modify expressions, delete formulas, or add new ones.")
 
-            formula_data = []
-            for formula in result.extracted_formulas:
-                formula_data.append({
-                    "Formula Name": formula.formula_name,
-                    "Expression": formula.formula_expression,
-                    "Confidence": f"{formula.confidence:.1%}",
-                    "Business Context": formula.business_context,
-                    "Document Evidence": formula.document_evidence,
-                    "Specific Variables": ", ".join(formula.specific_variables.keys())
-                })
+            # Create table header
+            col_header1, col_header2, col_header3 = st.columns([3, 5, 2])
+            with col_header1:
+                st.markdown("**Formula Name**")
+            with col_header2:
+                st.markdown("**Expression**")
+            with col_header3:
+                st.markdown("**Actions**")
 
-            df = pd.DataFrame(formula_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # Display existing formulas with improved layout
+            for i, formula in enumerate(st.session_state.formulas):
+                col1, col2, col3 = st.columns([3, 5, 2])
+                
+                with col1:
+                    if st.session_state.editing_formula == i:
+                        # Editable formula name
+                        new_name = st.text_input(
+                            "Formula Name",
+                            value=formula.get("formula_name", ""),
+                            key=f"name_{i}",
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        # Display only
+                        st.markdown(f"**{formula.get('formula_name', '')}**")
+                    
+                with col2:
+                    if st.session_state.editing_formula == i:
+                        # Editable formula expression
+                        new_expression = st.text_area(
+                            "Expression",
+                            value=formula.get("formula_expression", ""),
+                            key=f"expr_{i}",
+                            label_visibility="collapsed",
+                            height=68
+                        )
+                    else:
+                        # Display only
+                        st.code(formula.get("formula_expression", ""), language="python")
+                    
+                with col3:
+                    if st.session_state.editing_formula == i:
+                        # Save and Cancel buttons when editing
+                        col_save, col_cancel = st.columns(2)
+                        with col_save:
+                            if st.button("Save", key=f"save_{i}", help="Save changes"):
+                                st.session_state.formulas[i]["formula_name"] = new_name
+                                st.session_state.formulas[i]["formula_expression"] = new_expression
+                                st.session_state.formulas_saved = False
+                                st.session_state.editing_formula = -1
+                                st.success("Formula updated!")
+                                st.rerun()
+                        
+                        with col_cancel:
+                            if st.button("Cancel", key=f"cancel_{i}", help="Cancel editing"):
+                                st.session_state.editing_formula = -1
+                                st.rerun()
+                    else:
+                        # Edit and Delete buttons when not editing
+                        col_edit, col_delete = st.columns(2)
+                        with col_edit:
+                            if st.button("Edit", key=f"edit_{i}", help="Edit this formula"):
+                                st.session_state.editing_formula = i
+                                st.rerun()
+                        
+                        with col_delete:
+                            if st.button("Delete", key=f"delete_{i}", help="Delete this formula"):
+                                st.session_state.formulas.pop(i)
+                                st.session_state.formulas_saved = False
+                                st.session_state.editing_formula = -1
+                                st.success("Formula deleted!")
+                                st.rerun()
+                
+                # Add separator between rows
+                if i < len(st.session_state.formulas) - 1:
+                    st.markdown('<hr style="margin: 0.5rem 0; border: 0; border-top: 1px solid #e0e0e0;">', unsafe_allow_html=True)
+
+            # Section divider after table
+            st.markdown("---")
+
+            # Add new formula section
+            st.markdown("#### Add New Formula")
+            col_add1, col_add2, col_add3 = st.columns([3, 5, 2])
+            
+            with col_add1:
+                new_formula_name = st.text_input("New Formula Name", key="new_formula_name", label_visibility="collapsed", placeholder="Enter formula name")
+            
+            with col_add2:
+                new_formula_expression = st.text_area("New Formula Expression", key="new_formula_expression", label_visibility="collapsed", placeholder="Enter formula expression", height=68)
+            
+            with col_add3:
+                st.write("")  # Space for alignment
+                if st.button("Add Formula", key="add_new_formula", help="Add new formula"):
+                    if new_formula_name.strip() and new_formula_expression.strip():
+                        new_formula = {
+                            "formula_name": new_formula_name.strip(),
+                            "formula_expression": new_formula_expression.strip()
+                        }
+                        st.session_state.formulas.append(new_formula)
+                        st.session_state.formulas_saved = False
+                        st.success(f"Added formula: {new_formula_name}")
+                        st.rerun()
+                    else:
+                        st.warning("Please enter both formula name and expression.")
 
             st.markdown("---")
 
-            st.subheader("⬇ Export Extracted Data")
+            # Save and Reset buttons
+            col_save1, col_save2 = st.columns([1, 1])
+            
+            with col_save1:
+                if st.button("Save All Changes", type="primary", key="save_formulas"):
+                    if st.session_state.formulas:
+                        st.session_state.formulas_saved = True
+                        st.session_state.editing_formula = -1
+                        st.success("All formulas saved! Changes will be reflected in downloads.")
+                    else:
+                        st.warning("No formulas to save.")
+            
+            with col_save2:
+                if st.button("Reset All Formulas", key="reset_formulas"):
+                    st.session_state.formulas = []
+                    st.session_state.formulas_saved = False
+                    st.session_state.editing_formula = -1
+                    st.success("All formulas reset.")
+                    st.rerun()
+
+            st.markdown("---")
+
+            st.subheader("Export Extracted Data")
             st.markdown("Download the extracted formulas in various formats for further analysis or integration.")
 
+            # Create export data from current session state (user-edited formulas)
             export_data = {
                 "extraction_summary": result.extraction_summary,
-                "total_formulas": len(result.extracted_formulas),
+                "total_formulas": len(st.session_state.formulas),
                 "overall_confidence": result.overall_confidence,
-                "formulas": [formula.to_dict() for formula in result.extracted_formulas]
+                "formulas": st.session_state.formulas
             }
 
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
                 st.download_button(
-                    label=" Download as JSON",
+                    label="Download as JSON",
                     data=json.dumps(export_data, indent=2),
                     file_name="extracted_formulas.json",
                     mime="application/json",
@@ -1172,9 +1591,16 @@ def main():
                 )
 
             with col_exp2:
-                csv_data = df.to_csv(index=False)
+                # Create CSV data from current formulas (user-edited)
+                csv_data = pd.DataFrame([
+                    {
+                        "Formula Name": f.get("formula_name", ""),
+                        "Expression": f.get("formula_expression", "")
+                    } for f in st.session_state.formulas
+                ]).to_csv(index=False)
+                
                 st.download_button(
-                    label=" Download as CSV",
+                    label="Download as CSV",
                     data=csv_data,
                     file_name="extracted_formulas.csv",
                     mime="text/csv",
@@ -1189,60 +1615,11 @@ def main():
     st.markdown(
         """
         <div style="text-align: center; margin-top: 50px; color: #7f8c8d; font-size: 0.9em;">
-            <p>Developed with ❤️ using Streamlit and OpenAI API</p>
+            <p>Developed with love using Streamlit and OpenAI API</p>
         </div>
         """,
         unsafe_allow_html=True
     )
-    st.set_page_config(
-    page_title="Document Formula Extractor",
-    page_icon="https://raw.githubusercontent.com/AyushiR0y/streamlit_formulagen/main/assets/logo.png",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom header bar with logo and title
-st.markdown(
-    """
-    <style>
-        .header-container {
-            padding: 1rem 0;
-        }
-
-        .header-bar {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            background-color: white; /* Optional: to contrast with shadow */
-            padding: 1rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Soft gray shadow */
-        }
-
-        .header-title {
-            font-size: 2.5rem;
-            font-weight: 750;
-            color: #004DA8 !important;
-            font-family: 'Segoe UI', sans-serif;
-            margin: 0;
-        }
-
-        .header-bar img {
-            height: 100px;
-        }
-    </style>
-
-    <div class="header-container">
-        <div class="header-bar">
-            <img src="https://raw.githubusercontent.com/AyushiR0y/streamlit_formulagen/main/assets/logo.png">
-            <div class="header-title">Document Formula Extractor</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
 
 if __name__ == "__main__":
     main()
