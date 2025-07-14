@@ -3,3 +3,24 @@ pdfminer.six
 openai
 python-dotenv
 python-docx
+python-docx>=0.8.11
+PyPDF2>=3.0.0
+pdfplumber>=0.7.0
+
+# LangChain dependencies
+langchain>=0.0.300
+langchain-openai>=0.0.5
+faiss-cpu>=1.7.4
+tiktoken>=0.4.0
+
+# Optional: for better PDF processing
+pymupdf>=1.21.0
+fitz>=0.0.1.dev2
+
+# For text processing
+nltk>=3.8.1
+spacy>=3.4.0
+
+# Installation commands:
+# pip install -r requirements.txt
+# python -m spacy download en_core_web_sm
