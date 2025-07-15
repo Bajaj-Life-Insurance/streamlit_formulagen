@@ -20,44 +20,25 @@ from collections import defaultdict
 
 def setup_google_analytics():
     ga_code = """
-    <div id="ga-container"></div>
     <script>
-    (function() {
-        function loadGoogleAnalytics() {
-            const script1 = document.createElement('script');
-            script1.async = true;
-            script1.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
-            document.head.appendChild(script1);
-            
-            script1.onload = function() {
-                console.log('GA script loaded');
-                
-                // Make sure dataLayer is global
-                window.dataLayer = window.dataLayer || [];
-                
-                // Define gtag function globally
-                function gtag(){
-                    window.dataLayer.push(arguments);
-                }
-                
-                // Make gtag accessible globally
-                window.gtag = gtag;
-                
-                gtag('js', new Date());
-                gtag('config', 'G-6SN9JR0N68');
-                
-                console.log('gtag initialized, type:', typeof window.gtag);
-                console.log('gtag global test:', typeof gtag);
-                
-                gtag('event', 'page_view', {
-                    'page_title': document.title,
-                    'page_location': window.location.href
-                });
-            };
-        }
-        
-        loadGoogleAnalytics();
-    })();
+    // Direct global assignment
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){
+        window.dataLayer.push(arguments);
+    };
+    
+    // Load GA4 script
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
+    document.head.appendChild(script);
+    
+    // Initialize when ready
+    script.onload = function() {
+        window.gtag('js', new Date());
+        window.gtag('config', 'G-6SN9JR0N68');
+        console.log('GA4 ready - gtag type:', typeof window.gtag);
+    };
     </script>
     """
     st.components.v1.html(ga_code, height=0)
