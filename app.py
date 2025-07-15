@@ -74,9 +74,9 @@ INPUT_VARIABLES = {
     'SSV3_FACTOR': 'A special factor used to compute Special Surrender Value (SSV) related to paid-up income benefits',
     'SSV2_FACTOR':'A special factor used to compute Special Surrender Value (SSV) related to return of premium (ROP)',
     'FUND_VALUE': 'The total value of the policy fund at the time of surrender or maturity',
-    'N':'Lower of Policy term or 20 years',
+    'N':'min(Policy_term, 20) - Elapsed_policy_duration',
     'SYSTEM_PAID': 'The amount paid by the system for surrender or maturity',
-    'CAPITAL_UNITS':' The number of units in the policy fund at the time of surrender or maturity',
+    'CAPITAL_UNITS_VALUE':' The number of units in the policy fund at the time of surrender or maturity',
 
 }
 
@@ -86,6 +86,7 @@ BASIC_DERIVED_FORMULAS = {
     'policy_year': 'Calculate based on difference between TERM_START_DATE and DATE_OF_SURRENDER + 1',
     'maturity_date': 'TERM_START_DATE + (BENEFIT_TERM* 12) months',
     'Final_surrender_value_paid':'Final surrender value paid',
+    'Elapsed_policy_duration': 'How many years have passed since policy start',
     'CAPITAL_FUND_VALUE': 'The total value of the policy fund at the time of surrender or maturity, including any bonuses or additional benefits',
     'FUND_FACTOR': 'A factor used to compute the fund value based on the total premiums paid and the policy term'
 }
@@ -420,7 +421,9 @@ class StableChunkedDocumentFormulaExtractor:
         """Select most relevant chunks for specific formula"""
         
         formula_specific_keywords = {
-            'surrender': ['surrender', 'gsv', 'ssv', 'cash', 'quit'],
+            'surrender': ['surrender', 'gsv', 'ssv', 'cash', 'quit', 'capital units', 'elapsed', 'policy term', '1.05', 'three years', 'redemption'],
+            'surrender_charge': ['surrender charge', 'capital units', '1.05', 'elapsed policy duration', 'policy term', 'three years', 'redemption'],
+    # ... other keywords
             'premium': ['premium', 'payment', 'annual', 'monthly'],
             'benefit': ['benefit', 'payout', 'income', 'amount'],
             'death': ['death', 'mortality', 'sum assured'],
@@ -503,6 +506,11 @@ class StableChunkedDocumentFormulaExtractor:
 
         AVAILABLE VARIABLES:
         {', '.join(self.input_variables.keys())}
+        SPECIAL INSTRUCTIONS FOR SURRENDER CHARGE and similar formulas:
+        - Look for complex formulas involving exponential calculations like (1/1.05)^N
+        - Look for conditional logic based on policy duration (e.g., 3 years minimum)
+        - Look for references to "Capital Units" specifically
+        - Pay attention to formulas with multiple calculation steps
 
         TASK:
         1. Find the mathematical formula or calculation method for {formula_name}
