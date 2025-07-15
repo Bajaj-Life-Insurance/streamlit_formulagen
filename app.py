@@ -21,10 +21,11 @@ from collections import defaultdict
 def setup_google_analytics():
     ga_code = """
     <script>
-    // Direct global assignment
+    // Global setup
     window.dataLayer = window.dataLayer || [];
     window.gtag = function(){
         window.dataLayer.push(arguments);
+        console.log('gtag called with:', arguments);
     };
     
     // Load GA4 script
@@ -33,11 +34,18 @@ def setup_google_analytics():
     script.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
     document.head.appendChild(script);
     
-    // Initialize when ready
     script.onload = function() {
         window.gtag('js', new Date());
         window.gtag('config', 'G-6SN9JR0N68');
-        console.log('GA4 ready - gtag type:', typeof window.gtag);
+        
+        // Send test event
+        window.gtag('event', 'app_loaded', {
+            'event_category': 'engagement',
+            'event_label': 'streamlit_app'
+        });
+        
+        console.log('GA4 setup complete');
+        console.log('DataLayer contents:', window.dataLayer);
     };
     </script>
     """
@@ -1210,6 +1218,31 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
     )
 def main():
     setup_google_analytics()
+    if st.button("Test GA4 Event"):
+        test_event = """
+        <script>
+        if (window.gtag) {
+            window.gtag('event', 'button_click', {
+                'event_category': 'interaction',
+                'event_label': 'test_button'
+            });
+            console.log('Test event sent via window.gtag');
+        } else {
+            console.log('window.gtag not available');
+        }
+        
+        // Also try direct dataLayer push
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+            'event': 'manual_event',
+            'event_category': 'test',
+            'event_action': 'button_click'
+        });
+        console.log('Direct dataLayer push sent');
+        </script>
+        """
+    st.components.v1.html(test_event, height=0)
+    st.success("Test event sent!")
 
     st.set_page_config(
         page_title="Document Formula Extractor",
