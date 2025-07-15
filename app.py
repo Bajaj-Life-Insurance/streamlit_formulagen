@@ -20,6 +20,19 @@ from collections import defaultdict
 
 
 load_dotenv()
+def setup_google_analytics():
+    """Embed Google Tag Manager for GA4 tracking in Streamlit"""
+    gtm_code = """
+    <!-- Google Tag Manager -->
+    <script>
+      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id=' + i + dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','	GTM-5C4LVMKZ');
+    </script>
+    """
+    st.components.v1.html(gtm_code, height=0)
 
 # Configuration
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
@@ -133,19 +146,7 @@ class DocumentExtractionResult:
 
     def to_dict(self):
         return asdict(self)
-def setup_google_analytics():
-    """Initialize Google Analytics tracking"""
-    ga_code = """
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-JBGP2EBGWH"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-JBGP2EBGWH');
-    </script>
-    """
-    st.components.v1.html(ga_code, height=0)
+
 class StableChunkedDocumentFormulaExtractor:
     """Extracts formulas from large documents using stable chunking ratios"""
 
