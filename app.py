@@ -52,7 +52,6 @@ def setup_google_analytics():
     st.markdown(ga_code, unsafe_allow_html=True)
 
 # Call this once at the top of your app
-setup_google_analytics()
 load_dotenv()
 
 
@@ -1220,6 +1219,8 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
         unsafe_allow_html=True
     )
 def main():
+    setup_google_analytics()
+
     st.set_page_config(
         page_title="Document Formula Extractor",
         page_icon="https://github.com/AyushiR0y/streamlit_formulagen/raw/64b69f5e22fdd673d9ae58fdee24700687b372c1/assets/Dragnfly.png",
