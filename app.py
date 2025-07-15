@@ -18,8 +18,6 @@ from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
 
-
-# Put this at the very top of your main function or right after imports
 def setup_google_analytics():
     ga_code = """
     <!-- Google tag (gtag.js) -->
@@ -30,16 +28,18 @@ def setup_google_analytics():
       gtag('js', new Date());
       gtag('config', 'G-6SN9JR0N68');
       
-      // Debug: Send a test event
+      // Force send a page view
       gtag('event', 'page_view', {
-        'page_title': 'Streamlit App',
+        'page_title': document.title,
         'page_location': window.location.href
       });
+      
+      // Debug log
+      console.log('GA4 tracking initialized for G-6SN9JR0N68');
     </script>
     """
     st.components.v1.html(ga_code, height=0)
 
-# Call this at the very beginning of your app
 setup_google_analytics()
 load_dotenv()
 
