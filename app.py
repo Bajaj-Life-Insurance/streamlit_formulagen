@@ -424,7 +424,6 @@ class StableChunkedDocumentFormulaExtractor:
         formula_specific_keywords = {
             'surrender': ['surrender', 'gsv', 'ssv', 'cash', 'quit', 'capital units', 'elapsed', 'policy term', '1.05', 'three years', 'redemption'],
             'surrender_charge': ['surrender charge', 'capital units', '1.05', 'elapsed policy duration', 'policy term', 'three years', 'redemption'],
-    # ... other keywords
             'premium': ['premium', 'payment', 'annual', 'monthly'],
             'benefit': ['benefit', 'payout', 'income', 'amount'],
             'death': ['death', 'mortality', 'sum assured'],
@@ -507,18 +506,18 @@ class StableChunkedDocumentFormulaExtractor:
 
         AVAILABLE VARIABLES:
         {', '.join(self.input_variables.keys())}
-        SPECIAL INSTRUCTIONS FOR SURRENDER CHARGE and similar formulas:
-        - Look for complex formulas involving exponential calculations like (1/1.05)^N
-        - Look for conditional logic based on policy duration (e.g., 3 years minimum)
-        - Look for references to "Capital Units" specifically
-        - Pay attention to formulas with multiple calculation steps
-
-        TASK:
-        1. Find the mathematical formula or calculation method for {formula_name}
-        2. Use only the available variables listed above
-        3. Extract the exact formula expression
-        4. Provide supporting evidence from the document
-        5. If no formula is found, respond with "FORMULA_NOT_FOUND"
+    
+        INSTRUCTIONS:
+        1. Identify a mathematical formula or calculation method for "{formula_name}"
+        2. Use the available variables where possible. If others are needed, explain why.
+        3. Extract the formula expression as accurately as possible
+        4. Include special conditions or multi-step logic if present
+        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning
+        6. Pay close attention to formulas involving:
+        - exponential terms like (1/1.05)^N
+        - conditions like policy term > 3 years
+        - Capital Units references
+        - on death mentions
 
         RESPONSE FORMAT:
         FORMULA_EXPRESSION: [mathematical expression using available variables]
@@ -527,7 +526,7 @@ class StableChunkedDocumentFormulaExtractor:
         BUSINESS_CONTEXT: [brief explanation of what this formula calculates]
         CONFIDENCE_LEVEL: [number between 0.1 and 1.0]
 
-        Respond with only the requested format.
+        Respond with only the requested format.If unsure about any part, explain why in the response.
         """
         
         for model in models_to_try:
