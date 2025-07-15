@@ -19,37 +19,40 @@ import numpy as np
 from collections import defaultdict
 
 def setup_google_analytics():
-    # Clear any existing analytics and set up GA4 cleanly
     ga_code = """
+    <div id="ga-container"></div>
     <script>
-      // Clear any existing tracking
-      window.dataLayer = [];
-      window.gtag = undefined;
-      
-      // Remove any existing analytics scripts
-      const existingScripts = document.querySelectorAll('script[src*="analytics"], script[src*="gtag"]');
-      existingScripts.forEach(script => script.remove());
-    </script>
-    
-    <!-- Fresh GA4 setup -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-6SN9JR0N68');
-      
-      // Verify setup
-      console.log('GA4 Setup Complete - gtag type:', typeof gtag);
-      
-      // Send test event
-      gtag('event', 'page_view', {
-        'page_title': document.title,
-        'page_location': window.location.href
-      });
+    (function() {
+        function loadGoogleAnalytics() {
+            const script1 = document.createElement('script');
+            script1.async = true;
+            script1.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
+            document.head.appendChild(script1);
+            
+            script1.onload = function() {
+                console.log('GA script loaded');
+                
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                window.gtag = gtag;
+                gtag('js', new Date());
+                gtag('config', 'G-6SN9JR0N68');
+                
+                console.log('gtag initialized, type:', typeof window.gtag);
+                
+                gtag('event', 'page_view', {
+                    'page_title': document.title,
+                    'page_location': window.location.href
+                });
+            };
+        }
+        
+        loadGoogleAnalytics();
+        setTimeout(loadGoogleAnalytics, 1000);
+    })();
     </script>
     """
-    st.markdown(ga_code, unsafe_allow_html=True)
+    st.components.v1.html(ga_code, height=0)
 
 # Call this once at the top of your app
 load_dotenv()
