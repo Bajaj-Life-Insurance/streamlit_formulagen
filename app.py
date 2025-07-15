@@ -133,7 +133,19 @@ class DocumentExtractionResult:
 
     def to_dict(self):
         return asdict(self)
-
+def setup_google_analytics():
+    """Initialize Google Analytics tracking"""
+    ga_code = """
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-JBGP2EBGWH"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-JBGP2EBGWH');
+    </script>
+    """
+    st.components.v1.html(ga_code, height=0)
 class StableChunkedDocumentFormulaExtractor:
     """Extracts formulas from large documents using stable chunking ratios"""
 
@@ -634,6 +646,7 @@ class StableChunkedDocumentFormulaExtractor:
             extraction_summary="Cannot extract formulas from document. A valid `OPENAI_API_KEY` is required to enable stable chunked document analysis and formula extraction.",
             overall_confidence=0.0,
         )
+
 
 def extract_text_from_file(file_bytes, file_extension):
     """Extract text from supported file formats with better error handling"""
@@ -1190,6 +1203,7 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
+    setup_google_analytics()
 
     # Apply custom CSS
     set_custom_css()
