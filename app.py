@@ -20,36 +20,20 @@ from collections import defaultdict
 
 def setup_google_analytics():
     ga_code = """
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
     <script>
-    // Global setup
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function(){
-        window.dataLayer.push(arguments);
-        console.log('gtag called with:', arguments);
-    };
-    
-    // Load GA4 script
-    const script = document.createElement('script');
-    script.async = true;
-    script.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
-    document.head.appendChild(script);
-    
-    script.onload = function() {
-        window.gtag('js', new Date());
-        window.gtag('config', 'G-6SN9JR0N68');
-        
-        // Send test event
-        window.gtag('event', 'app_loaded', {
-            'event_category': 'engagement',
-            'event_label': 'streamlit_app'
-        });
-        
-        console.log('GA4 setup complete');
-        console.log('DataLayer contents:', window.dataLayer);
-    };
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-6SN9JR0N68', {
+        'send_page_view': true
+      });
+      
+      console.log('GA4 setup complete');
     </script>
     """
-    st.components.v1.html(ga_code, height=0)
+    st.markdown(ga_code, unsafe_allow_html=True)
 load_dotenv()
 
 
