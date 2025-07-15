@@ -18,17 +18,29 @@ from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
 
-ga_code = """
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-6SN9JR0N68');
-</script>
-"""
-st.components.v1.html(ga_code, height=0)
+
+# Put this at the very top of your main function or right after imports
+def setup_google_analytics():
+    ga_code = """
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-6SN9JR0N68');
+      
+      // Debug: Send a test event
+      gtag('event', 'page_view', {
+        'page_title': 'Streamlit App',
+        'page_location': window.location.href
+      });
+    </script>
+    """
+    st.components.v1.html(ga_code, height=0)
+
+# Call this at the very beginning of your app
+setup_google_analytics()
 load_dotenv()
 
 
