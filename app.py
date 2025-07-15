@@ -1301,8 +1301,8 @@ def main():
 
     with col1:
         # Output Variable Selection
-        st.subheader("Select Target Formulas")
-        st.markdown("Choose which formulas you want to extract from the document. You can also add custom ones!")
+        st.subheader("Select Keywords")
+        st.markdown("Choose the keywords you want to extract from the document to generate formulas. You can also add custom ones!")
 
         # Combine default and user-defined variables for the multiselect options
         all_possible_output_variables = sorted(list(set(DEFAULT_TARGET_OUTPUT_VARIABLES + st.session_state.user_defined_output_variables)))
