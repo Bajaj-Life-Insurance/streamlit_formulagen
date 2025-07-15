@@ -1313,6 +1313,10 @@ def main():
         """,
         unsafe_allow_html=True
     )
+    
+    # Your other app code...
+    
+    # Test button - make sure ALL of this is properly indented
     if st.button("Test GA4 Event"):
         test_event = """
         <script>
@@ -1326,7 +1330,6 @@ def main():
             console.log('window.gtag not available');
         }
         
-        // Also try direct dataLayer push
         window.dataLayer = window.dataLayer || [];
         window.dataLayer.push({
             'event': 'manual_event',
@@ -1336,8 +1339,10 @@ def main():
         console.log('Direct dataLayer push sent');
         </script>
         """
-    st.components.v1.html(test_event, height=0)
-    st.success("Test event sent!")
+        st.components.v1.html(test_event, height=0)  # This MUST be inside the if block
+        st.success("Test event sent!")
+    
+    # Continue with rest of your app...
 
     st.set_page_config(
         page_title="Document Formula Extractor",
