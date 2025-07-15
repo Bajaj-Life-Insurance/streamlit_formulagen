@@ -22,13 +22,13 @@ from streamlit_javascript import st_javascript
 st_javascript("""
   const script = document.createElement('script');
   script.setAttribute('async', '');
-  script.src = 'https://www.googletagmanager.com/gtag/js?id=G-JBGP2EBGWH';
+  script.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
   document.head.appendChild(script);
 
   window.dataLayer = window.dataLayer || [];
   function gtag(){ dataLayer.push(arguments); }
   gtag('js', new Date());
-  gtag('config', 'G-JBGP2EBGWH');
+  gtag('config', 'G-6SN9JR0N68');
 """)
 load_dotenv()
 
