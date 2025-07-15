@@ -18,22 +18,7 @@ from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
 
-def setup_google_analytics():
-    ga_code = """
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-6SN9JR0N68', {
-        'send_page_view': true
-      });
-      
-      console.log('GA4 setup complete');
-    </script>
-    """
-    st.markdown(ga_code, unsafe_allow_html=True)
+
 load_dotenv()
 
 
@@ -1201,8 +1186,16 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
         unsafe_allow_html=True
     )
 def main():
-    setup_google_analytics()
-     
+    st.markdown("""
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-6SN9JR0N68');
+      console.log('Clean GA4 setup');
+    </script>
+    """, unsafe_allow_html=True)   
 
     # Apply custom CSS
     set_custom_css()
