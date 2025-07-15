@@ -17,19 +17,17 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
-from streamlit_javascript import st_javascript
 
-st_javascript("""
-  const script = document.createElement('script');
-  script.setAttribute('async', '');
-  script.src = 'https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68';
-  document.head.appendChild(script);
-
+ga_code = """
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
+<script>
   window.dataLayer = window.dataLayer || [];
-  function gtag(){ dataLayer.push(arguments); }
+  function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
   gtag('config', 'G-6SN9JR0N68');
-""")
+</script>
+st.components.v1.html(ga_code, height=0)
 load_dotenv()
 
 
