@@ -32,13 +32,22 @@ def setup_google_analytics():
             script1.onload = function() {
                 console.log('GA script loaded');
                 
+                // Make sure dataLayer is global
                 window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
+                
+                // Define gtag function globally
+                function gtag(){
+                    window.dataLayer.push(arguments);
+                }
+                
+                // Make gtag accessible globally
                 window.gtag = gtag;
+                
                 gtag('js', new Date());
                 gtag('config', 'G-6SN9JR0N68');
                 
                 console.log('gtag initialized, type:', typeof window.gtag);
+                console.log('gtag global test:', typeof gtag);
                 
                 gtag('event', 'page_view', {
                     'page_title': document.title,
@@ -48,13 +57,10 @@ def setup_google_analytics():
         }
         
         loadGoogleAnalytics();
-        setTimeout(loadGoogleAnalytics, 1000);
     })();
     </script>
     """
     st.components.v1.html(ga_code, height=0)
-
-# Call this once at the top of your app
 load_dotenv()
 
 
