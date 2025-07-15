@@ -27,6 +27,7 @@ ga_code = """
   gtag('js', new Date());
   gtag('config', 'G-6SN9JR0N68');
 </script>
+"""
 st.components.v1.html(ga_code, height=0)
 load_dotenv()
 
