@@ -17,7 +17,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
-
+import streamlit_analytics
 
 load_dotenv()
 
@@ -1651,6 +1651,7 @@ def main():
         """,
         unsafe_allow_html=True
     )
-
+with streamlit_analytics.track():
+    main()
 if __name__ == "__main__":
     main()
