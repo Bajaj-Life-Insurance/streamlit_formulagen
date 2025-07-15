@@ -18,29 +18,20 @@ from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
 
-def setup_google_analytics():
-    ga_code = """
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-6SN9JR0N68');
-      
-      // Force send a page view
-      gtag('event', 'page_view', {
-        'page_title': document.title,
-        'page_location': window.location.href
-      });
-      
-      // Debug log
-      console.log('GA4 tracking initialized for G-6SN9JR0N68');
-    </script>
-    """
-    st.components.v1.html(ga_code, height=0)
+st.markdown("""
+<script>
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtag/js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','G-6SN9JR0N68');
 
-setup_google_analytics()
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-6SN9JR0N68');
+</script>
+""", unsafe_allow_html=True)
 load_dotenv()
 
 
