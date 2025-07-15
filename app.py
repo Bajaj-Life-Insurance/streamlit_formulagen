@@ -1218,39 +1218,7 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
     )
 def main():
     setup_google_analytics()
-    if st.button("Test GA4 Event"):
-        test_event = """
-        <script>
-        if (window.gtag) {
-            window.gtag('event', 'button_click', {
-                'event_category': 'interaction',
-                'event_label': 'test_button'
-            });
-            console.log('Test event sent via window.gtag');
-        } else {
-            console.log('window.gtag not available');
-        }
-        
-        // Also try direct dataLayer push
-        window.dataLayer = window.dataLayer || [];
-        window.dataLayer.push({
-            'event': 'manual_event',
-            'event_category': 'test',
-            'event_action': 'button_click'
-        });
-        console.log('Direct dataLayer push sent');
-        </script>
-        """
-    st.components.v1.html(test_event, height=0)
-    st.success("Test event sent!")
-
-    st.set_page_config(
-        page_title="Document Formula Extractor",
-        page_icon="https://github.com/AyushiR0y/streamlit_formulagen/raw/64b69f5e22fdd673d9ae58fdee24700687b372c1/assets/Dragnfly.png",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-   
+     
 
     # Apply custom CSS
     set_custom_css()
@@ -1344,6 +1312,38 @@ def main():
         </div>
         """,
         unsafe_allow_html=True
+    )
+    if st.button("Test GA4 Event"):
+        test_event = """
+        <script>
+        if (window.gtag) {
+            window.gtag('event', 'button_click', {
+                'event_category': 'interaction',
+                'event_label': 'test_button'
+            });
+            console.log('Test event sent via window.gtag');
+        } else {
+            console.log('window.gtag not available');
+        }
+        
+        // Also try direct dataLayer push
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+            'event': 'manual_event',
+            'event_category': 'test',
+            'event_action': 'button_click'
+        });
+        console.log('Direct dataLayer push sent');
+        </script>
+        """
+    st.components.v1.html(test_event, height=0)
+    st.success("Test event sent!")
+
+    st.set_page_config(
+        page_title="Document Formula Extractor",
+        page_icon="https://github.com/AyushiR0y/streamlit_formulagen/raw/64b69f5e22fdd673d9ae58fdee24700687b372c1/assets/Dragnfly.png",
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
 
     # Initialize session state
