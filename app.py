@@ -74,7 +74,10 @@ INPUT_VARIABLES = {
     'SSV3_FACTOR': 'A special factor used to compute Special Surrender Value (SSV) related to paid-up income benefits',
     'SSV2_FACTOR':'A special factor used to compute Special Surrender Value (SSV) related to return of premium (ROP)',
     'FUND_VALUE': 'The total value of the policy fund at the time of surrender or maturity',
-    'SYSTEM_PAID': 'The amount paid by the system for surrender or maturity'
+    'N':'Lower of Policy term or 20 years',
+    'SYSTEM_PAID': 'The amount paid by the system for surrender or maturity',
+    'CAPITAL_UNITS':' The number of units in the policy fund at the time of surrender or maturity',
+
 }
 
 # Basic derived formulas that can be logically computed
@@ -93,6 +96,7 @@ DEFAULT_TARGET_OUTPUT_VARIABLES = [
     'TEN_TIMES_AP',
     'one_oh_five_percent_total_premium',
     'SUM_ASSURED_ON_DEATH',
+    'SUM_ASSURED',
     'GSV',
     'PAID_UP_SA',
     'PAID_UP_SA_ON_DEATH',
@@ -100,13 +104,8 @@ DEFAULT_TARGET_OUTPUT_VARIABLES = [
     'SSV1_AMT',
     'SSV2_AMT',
     'SSV3_AMT',
-    'SSV',
+    'TOTAL_SSV',
     'SURRENDER_PAID_AMOUNT',
-    'PV',
-    'N',
-    'SURRENDER_CHARGE_VALUE',
-    'SURRENDER_CHARGE',
-    'FINAL_SURRENDER_VALUE',
 ]
 
 @dataclass
@@ -1294,6 +1293,10 @@ def main():
     if 'editing_formula' not in st.session_state:
         st.session_state.editing_formula = -1  # -1 means no formula is being edited
 
+    # Track when keywords change to reset file upload
+    if 'previous_selected_variables' not in st.session_state:
+        st.session_state.previous_selected_variables = DEFAULT_TARGET_OUTPUT_VARIABLES.copy()
+
     # Main Content Area
     st.markdown("---")
 
@@ -1308,28 +1311,47 @@ def main():
         all_possible_output_variables = sorted(list(set(DEFAULT_TARGET_OUTPUT_VARIABLES + st.session_state.user_defined_output_variables)))
 
         # Update selected_output_variables with the multiselect
-        st.session_state.selected_output_variables = st.multiselect(
-            "Formulas to search for:",
+        current_selection = st.multiselect(
+            "Target Keywords:",
             options=all_possible_output_variables,
             default=st.session_state.selected_output_variables,
-            help="These are the key formulas the system will try to find. Select all that apply."
+            help="These are the keywords for which the system will try to find formulas. Select all that apply."
         )
+
+        # Check if selection changed - if so, reset file upload and extraction results
+        if current_selection != st.session_state.previous_selected_variables:
+            st.session_state.selected_output_variables = current_selection
+            st.session_state.previous_selected_variables = current_selection.copy()
+            st.session_state.extraction_result = None
+            st.session_state.formulas = []
+            st.session_state.formulas_saved = False
+            st.session_state.editing_formula = -1
+            # Force rerun to clear file uploader
+            st.rerun()
+        else:
+            st.session_state.selected_output_variables = current_selection
 
         # Add custom output variable
         st.session_state.custom_output_variable = st.text_input(
-            "Add a custom formula name (e.g., 'DEATH_BENEFIT_CALC'):",
+            "Add a custom keyword (e.g., 'DEATH_BENEFIT_CALC'):",
             value=st.session_state.custom_output_variable,
             key="custom_output_input",
-            help="Enter a specific formula name you want to extract, even if it's not in the default list. Press 'Add' to include it."
+            help="Enter a specific keyword whose formulas you want to extract, even if it's not in the default list. Press 'Add' to include it."
         )
 
-        if st.button("Add Custom Formula", key="add_custom_formula_button"):
+        if st.button("Add Custom Keyword", key="add_custom_formula_button"):
             new_var = st.session_state.custom_output_variable.strip()
             if new_var and new_var not in st.session_state.user_defined_output_variables and new_var not in DEFAULT_TARGET_OUTPUT_VARIABLES:
                 st.session_state.user_defined_output_variables.append(new_var)
                 if new_var not in st.session_state.selected_output_variables:
                     st.session_state.selected_output_variables.append(new_var)
+                    st.session_state.previous_selected_variables = st.session_state.selected_output_variables.copy()
                 st.session_state.custom_output_variable = ""
+                # Clear previous results when adding new custom variable
+                st.session_state.extraction_result = None
+                st.session_state.formulas = []
+                st.session_state.formulas_saved = False
+                st.session_state.editing_formula = -1
                 st.success(f"'{new_var}' added and selected!")
                 st.rerun()
             elif new_var in st.session_state.user_defined_output_variables or new_var in DEFAULT_TARGET_OUTPUT_VARIABLES:
@@ -1342,60 +1364,57 @@ def main():
         st.subheader("Upload Product Specifications")
         st.markdown("Upload your insurance policy document (PDF, TXT, DOCX) to begin formula extraction.")
 
+        # Generate a unique key based on selected variables to force file uploader reset
+        file_uploader_key = f"file_uploader_{hash(str(sorted(st.session_state.selected_output_variables)))}"
+        
         uploaded_file = st.file_uploader(
             "Select a document",
             type=list(ALLOWED_EXTENSIONS),
             help=f"Accepts: {', '.join(ALLOWED_EXTENSIONS)}. Max file size: {MAX_FILE_SIZE / (1024*1024):.1f} MB",
-            key="file_uploader"
+            key=file_uploader_key
         )
 
+        # Rest of your file processing code remains the same...
         if uploaded_file is not None:
             if uploaded_file.size > MAX_FILE_SIZE:
                 st.error(f"File size exceeds the limit. Please upload a file smaller than {MAX_FILE_SIZE / (1024*1024):.1f} MB.")
                 st.session_state.extraction_result = None
-                return
+            else:
+                st.info(f"**File Selected:** `{uploaded_file.name}` (`{uploaded_file.size / 1024:.1f} KB`)")
 
-            st.info(f"**File Selected:** `{uploaded_file.name}` (`{uploaded_file.size / 1024:.1f} KB`)")
-
-            if st.button("Analyze Document", type="primary", key="analyze_button"):
-                if not st.session_state.selected_output_variables:
-                    st.warning("Please select at least one target formula to extract or add a custom one.")
-                    st.session_state.extraction_result = None
-                    return
-
-                with st.spinner("Analyzing document and extracting formulas... This may take a moment."):
-                    file_extension = Path(uploaded_file.name).suffix.lower()
-                    text = extract_text_from_file(uploaded_file.read(), file_extension)
-
-                    if not text.strip():
-                        st.error("Could not extract readable text from the uploaded file. Please ensure it contains text content.")
+                if st.button("Analyze Document", type="primary", key="analyze_button"):
+                    if not st.session_state.selected_output_variables:
+                        st.warning("Please select at least one target formula to extract or add a custom one.")
                         st.session_state.extraction_result = None
-                        return
-
-                    # Only proceed with extraction if API key is configured
-                    if not MOCK_MODE and API_KEY:
-                        # Console logging - these messages will only appear in PowerShell
-                        
-                        
-                        extractor = StableChunkedDocumentFormulaExtractor(target_outputs=st.session_state.selected_output_variables)
-                        extraction_result = extractor.extract_formulas_from_document(text)
-                                                
-                        st.session_state.extraction_result = extraction_result
-                        # Convert to editable format
-                        st.session_state.formulas = [
-                            {
-                                "formula_name": formula.formula_name,
-                                "formula_expression": formula.formula_expression
-                            } for formula in extraction_result.extracted_formulas
-                        ]
-                        st.session_state.formulas_saved = False
-                        st.session_state.editing_formula = -1  # Reset editing state
                     else:
-                        st.session_state.extraction_result = None
-                        st.warning("Cannot perform extraction without a configured OPENAI_API_KEY.")
+                        with st.spinner("Analyzing document and extracting formulas... This may take a moment."):
+                            file_extension = Path(uploaded_file.name).suffix.lower()
+                            text = extract_text_from_file(uploaded_file.read(), file_extension)
+
+                            if not text.strip():
+                                st.error("Could not extract readable text from the uploaded file. Please ensure it contains text content.")
+                                st.session_state.extraction_result = None
+                            else:
+                                # Only proceed with extraction if API key is configured
+                                if not MOCK_MODE and API_KEY:
+                                    extractor = StableChunkedDocumentFormulaExtractor(target_outputs=st.session_state.selected_output_variables)
+                                    extraction_result = extractor.extract_formulas_from_document(text)
+                                                            
+                                    st.session_state.extraction_result = extraction_result
+                                    # Convert to editable format
+                                    st.session_state.formulas = [
+                                        {
+                                            "formula_name": formula.formula_name,
+                                            "formula_expression": formula.formula_expression
+                                        } for formula in extraction_result.extracted_formulas
+                                    ]
+                                    st.session_state.formulas_saved = False
+                                    st.session_state.editing_formula = -1  # Reset editing state
+                                else:
+                                    st.session_state.extraction_result = None
+                                    st.warning("Cannot perform extraction without a configured OPENAI_API_KEY.")
         else:
             st.session_state.extraction_result = None
-
     with col2:
         st.subheader("Reference Variables")
         st.markdown("These variables provide context for the AI during formula identification. Expand sections below to view details.")
