@@ -1185,17 +1185,7 @@ div[style*="background: linear-gradient(135deg, #004DA8"] * {
         """,
         unsafe_allow_html=True
     )
-def main():
-    st.markdown("""
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-6SN9JR0N68');
-      console.log('Clean GA4 setup');
-    </script>
-    """, unsafe_allow_html=True)   
+def main(): 
 
     # Apply custom CSS
     set_custom_css()
@@ -1290,36 +1280,7 @@ def main():
         """,
         unsafe_allow_html=True
     )
-    
-    # Your other app code...
-    
-    # Test button - make sure ALL of this is properly indented
-    if st.button("Test GA4 Event"):
-        test_event = """
-        <script>
-        if (window.gtag) {
-            window.gtag('event', 'button_click', {
-                'event_category': 'interaction',
-                'event_label': 'test_button'
-            });
-            console.log('Test event sent via window.gtag');
-        } else {
-            console.log('window.gtag not available');
-        }
-        
-        window.dataLayer = window.dataLayer || [];
-        window.dataLayer.push({
-            'event': 'manual_event',
-            'event_category': 'test',
-            'event_action': 'button_click'
-        });
-        console.log('Direct dataLayer push sent');
-        </script>
-        """
-        st.components.v1.html(test_event, height=0)  # This MUST be inside the if block
-        st.success("Test event sent!")
-    
-    # Continue with rest of your app...
+
 
     st.set_page_config(
         page_title="Document Formula Extractor",
