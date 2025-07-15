@@ -17,22 +17,21 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
+from streamlit_javascript import st_javascript
 
+st_javascript("""
+  const script = document.createElement('script');
+  script.setAttribute('async', '');
+  script.src = 'https://www.googletagmanager.com/gtag/js?id=G-JBGP2EBGWH';
+  document.head.appendChild(script);
 
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-JBGP2EBGWH');
+""")
 load_dotenv()
-def setup_google_analytics():
-    """Embed Google Tag Manager for GA4 tracking in Streamlit"""
-    gtm_code = """
-    <!-- Google Tag Manager -->
-    <script>
-      (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-      'https://www.googletagmanager.com/gtm.js?id=' + i + dl;f.parentNode.insertBefore(j,f);
-      })(window,document,'script','dataLayer','	GTM-5C4LVMKZ');
-    </script>
-    """
-    st.components.v1.html(gtm_code, height=0)
+
 
 # Configuration
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
@@ -1204,7 +1203,7 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    setup_google_analytics()
+   
 
     # Apply custom CSS
     set_custom_css()
