@@ -18,20 +18,41 @@ from langchain.schema import Document
 import numpy as np
 from collections import defaultdict
 
-st.markdown("""
-<script>
-(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtag/js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','G-6SN9JR0N68');
+def setup_google_analytics():
+    # Clear any existing analytics and set up GA4 cleanly
+    ga_code = """
+    <script>
+      // Clear any existing tracking
+      window.dataLayer = [];
+      window.gtag = undefined;
+      
+      // Remove any existing analytics scripts
+      const existingScripts = document.querySelectorAll('script[src*="analytics"], script[src*="gtag"]');
+      existingScripts.forEach(script => script.remove());
+    </script>
+    
+    <!-- Fresh GA4 setup -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-6SN9JR0N68"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-6SN9JR0N68');
+      
+      // Verify setup
+      console.log('GA4 Setup Complete - gtag type:', typeof gtag);
+      
+      // Send test event
+      gtag('event', 'page_view', {
+        'page_title': document.title,
+        'page_location': window.location.href
+      });
+    </script>
+    """
+    st.markdown(ga_code, unsafe_allow_html=True)
 
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', 'G-6SN9JR0N68');
-</script>
-""", unsafe_allow_html=True)
+# Call this once at the top of your app
+setup_google_analytics()
 load_dotenv()
 
 
