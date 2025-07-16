@@ -301,12 +301,12 @@ class StableChunkedDocumentFormulaExtractor:
                 input_variables=self.input_variables,
                 basic_derived_formulas=self.basic_derived,
                 extracted_formulas=extracted_formulas,
-                extraction_summary=f"Stable chunked analysis complete. Successfully identified {len(extracted_formulas)} formulas from {len(chunks)} stable chunks using {self.config['chunk_size']} char chunks with {self.config['chunk_overlap']} overlap.",
+                extraction_summary=f"Analysis complete!",
                 overall_confidence=overall_conf,
             )
             
         except Exception as e:
-            st.error(f"❌ **Stable chunked extraction failed:** {e}")
+            st.error(f"❌ **Extraction failed:** {e}")
             st.exception(e)
             return self._explain_no_extraction()
 
@@ -631,7 +631,7 @@ class StableChunkedDocumentFormulaExtractor:
             input_variables=self.input_variables,
             basic_derived_formulas=self.basic_derived,
             extracted_formulas=[],
-            extraction_summary="Cannot extract formulas from document. A valid `OPENAI_API_KEY` is required to enable stable chunked document analysis and formula extraction.",
+            extraction_summary="Cannot extract formulas from document. A valid `OPENAI_API_KEY` is required to enable document analysis and formula extraction.",
             overall_confidence=0.0,
         )
 
@@ -657,7 +657,7 @@ def extract_text_from_file(file_bytes, file_extension):
         elif file_extension == '.txt':
             text = file_bytes.decode('utf-8')
             if len(text) > 50000:
-                st.info(f"📊 Text file size: {len(text)} characters. Using stable chunking.")
+                st.info(f"📊 Text file size: {len(text)} characters.")
             return text
         
         elif file_extension == '.docx':
@@ -667,7 +667,7 @@ def extract_text_from_file(file_bytes, file_extension):
                 doc = docx.Document(BytesIO(file_bytes))
                 text = '\n'.join([paragraph.text for paragraph in doc.paragraphs])
                 if len(text) > 50000:
-                    st.info(f"📊 Word document size: {len(text)} characters. Using stable chunking.")
+                    st.info(f"📊 Word document size: {len(text)} characters.")
                 return text
             except ImportError:
                 st.error("`python-docx` not installed. Please install it: `pip install python-docx`")
