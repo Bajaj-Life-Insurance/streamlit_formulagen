@@ -648,10 +648,7 @@ def extract_text_from_file(file_bytes, file_extension):
                 text = extract_text_from_pdf_lib(tmp_file_path)
                 os.unlink(tmp_file_path)
                 
-                # Log document size for stable chunking
-                if len(text) > 50000:
-                    st.info(f"📊 Document size: {len(text)} characters. Using stable chunking with {STABLE_CHUNK_CONFIG['chunk_size']} char chunks.")
-                
+               
                 return text
             except Exception as e:
                 os.unlink(tmp_file_path)
