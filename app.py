@@ -56,28 +56,28 @@ QUOTA_CONFIG = {
 
 # --- INPUT VARIABLES DEFINITIONS ---
 INPUT_VARIABLES = {
-    'TERM_START_DATE': 'Date when the policy starts',
+    'Term_start_date': 'Date when the policy starts',
     'FUP_Date': 'First Unpaid Premium date',
-    'ENTRY_AGE': 'Age of the policyholder at policy inception',
-    'TOTAL_PREMIUM': 'Annual Premium amount',
-    'BOOKING_FREQUENCY': 'Frequency of premium booking (monthly, quarterly, yearly)',
-    'PREMIUM_TERM': 'Premium Paying Term - duration for paying premiums',
-    'SUM_ASSURED': 'Sum Assured - guaranteed amount on maturity/death',
-    'Income_Benefit_Amount': 'Amount of income benefit',
+    'Entry_age': 'Age of the policyholder at policy inception',
+    'Total_premium': 'Annual Premium amount',
+    'Booking_frequency': 'Frequency of premium booking (monthly, quarterly, yearly)',
+    'Premium_term': 'Premium Paying Term - duration for paying premiums',
+    'Sum_assured': 'Sum Assured - guaranteed amount on maturity/death',
+    'Income_benefit_amount': 'Amount of income benefit',
     'Income_Benefit_Frequency': 'Frequency of income benefit payout',
-    'DATE_OF_SURRENDER': 'Date when policy is surrendered',
-    'no_of_premium_paid': 'Years passed since date of commencement till FUP',
-    'maturity_date': 'Date of commencement + (BENEFIT_TERM * 12 months)',
-    'policy_year': 'Years passed + 1 between date of commencement and surrender date',
-    'BENEFIT_TERM': 'The duration (in years) for which the policy benefits are payable',
-    'GSV_FACTOR': 'Guaranteed Surrender Value Factor, a percentage used to calculate the minimum guaranteed surrender value from total premiums paid.',
-    'SSV1_FACTOR': 'Surrender Value Factor',
-    'SSV3_FACTOR': 'A special factor used to compute Special Surrender Value (SSV) related to paid-up income benefits',
-    'SSV2_FACTOR':'A special factor used to compute Special Surrender Value (SSV) related to return of premium (ROP)',
-    'FUND_VALUE': 'The total value of the policy fund at the time of surrender or maturity',
+    'Date_of_surrender': 'Date when policy is surrendered',
+    'No_of_premium_paid': 'Years passed since Term_start_date till FUP_Date',
+    'Maturity_date': 'Term_start_date + (Benefit_term * 12 months)',
+    'Policy_year': 'Years passed + 1 between Term_start_date and Date_of_surrender',
+    'Benefit_term': 'The duration (in years) for which the policy benefits are payable',
+    'GSV_Factor': 'Guaranteed Surrender Value Factor, a percentage used to calculate the minimum guaranteed surrender value from total premiums paid.',
+    'SSV1_Factor': 'Surrender Value Factor',
+    'SSV3_Factor': 'A special factor used to compute Special Surrender Value (SSV) related to paid-up income benefits',
+    'SSV2_Factor':'A special factor used to compute Special Surrender Value (SSV) related to return of premium (ROP)',
+    'Fund_Value': 'The total value of the policy fund at the time of surrender or maturity',
     'N':'min(Policy_term, 20) - Elapsed_policy_duration',
-    'SYSTEM_PAID': 'The amount paid by the system for surrender or maturity',
-    'CAPITAL_UNITS_VALUE':' The number of units in the policy fund at the time of surrender or maturity',
+    'System_paid': 'The amount paid by the system for surrender or maturity',
+    'Capital_units_value':' The number of units in the policy fund at the time of surrender or maturity',
 
 }
 
@@ -88,24 +88,23 @@ BASIC_DERIVED_FORMULAS = {
     'maturity_date': 'TERM_START_DATE + (BENEFIT_TERM* 12) months',
     'Final_surrender_value_paid':'Final surrender value paid',
     'Elapsed_policy_duration': 'How many years have passed since policy start',
-    'CAPITAL_FUND_VALUE': 'The total value of the policy fund at the time of surrender or maturity, including any bonuses or additional benefits',
-    'FUND_FACTOR': 'A factor used to compute the fund value based on the total premiums paid and the policy term'
+    'Capital_fund_value': 'The total value of the policy fund at the time of surrender or maturity, including any bonuses or additional benefits',
+    'Fund_factor': 'A factor used to compute the fund value based on the total premiums paid and the policy term',
+    'Ten_Times_AP': '10 times the annual premium amount * Booking_frequency',
 }
 
 # Default TARGET OUTPUT VARIABLES (formulas must be extracted from document)
 DEFAULT_TARGET_OUTPUT_VARIABLES = [
-    'TOTAL_PREMIUM_PAID',
-    'TEN_TIMES_AP',
-    'one_oh_five_percent_total_premium',
-    'SUM_ASSURED_ON_DEATH',
-    'SUM_ASSURED',
+    'Total_Premium_Paid',
+    '105%_of_Total_Premium_Paid',
+    'Sum_Assured_on_Death',
     'GSV',
-    'PAID_UP_SA',
-    'PAID_UP_SA_ON_DEATH',
-    'paid_up_income_benefit_amount',
-    'SSV1_AMT',
-    'SSV2_AMT',
-    'SSV3_AMT',
+    'Paid_up_SA',
+    'Paid_up_SA_on_death',
+    'Paid_up_Income_benefit_amount',
+    'SSV1',
+    'SSV2',
+    'SSV3',
     'SSV',
     'SURRENDER_PAID_AMOUNT',
 ]
@@ -512,7 +511,7 @@ class StableChunkedDocumentFormulaExtractor:
         2. Use the available variables where possible. If others are needed, explain why.
         3. Extract the formula expression as accurately as possible
         4. Include special conditions or multi-step logic if present
-        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning
+        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning. Don't skip the output variable itself.
         6. Pay close attention to formulas involving:
         - exponential terms like (1/1.05)^N
         - conditions like policy term > 3 years
