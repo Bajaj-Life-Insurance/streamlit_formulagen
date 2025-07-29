@@ -8,6 +8,7 @@ from pdfminer.high_level import extract_text as extract_text_from_pdf_lib
 from dotenv import load_dotenv
 from dataclasses import dataclass, asdict
 from openai import OpenAI
+from openai import AzureOpenAI
 import hashlib
 import time
 import traceback
@@ -26,14 +27,30 @@ load_dotenv()
 ALLOWED_EXTENSIONS = {'pdf', 'txt', 'docx'}
 MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
 
-# --- API KEY CONFIGURATION ---
-API_KEY = os.getenv('OPENAI_API_KEY')
-if not API_KEY:
-    st.warning("⚠️ **OPENAI_API_KEY environment variable not set!** Please set your API key to enable advanced formula extraction from documents.")
+
+AZURE_API_KEY = os.getenv('AZURE_OPENAI_API_KEY')
+AZURE_ENDPOINT = os.getenv('AZURE_OPENAI_ENDPOINT')
+DEPLOYMENT_NAME = os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME')
+AZURE_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION')
+
+if not AZURE_API_KEY:
+    st.warning("⚠️ **AZURE_OPENAI_API_KEY environment variable not set!** Please set your API key to enable advanced formula extraction from documents.")
     MOCK_MODE = True
+    client = None
 else:
-    client = OpenAI(api_key=API_KEY)
-    MOCK_MODE = False
+    try:
+        client = AzureOpenAI(
+            azure_endpoint=AZURE_ENDPOINT,
+            api_key=AZURE_API_KEY,
+            api_version=AZURE_API_VERSION
+        )
+        MOCK_MODE = False
+
+    except Exception as e:
+        st.error(f"❌ Failed to initialize Azure OpenAI client: {str(e)}")
+        MOCK_MODE = True
+        client = None
+
 
 # --- STABLE CHUNKING CONFIGURATION ---
 STABLE_CHUNK_CONFIG = {
@@ -218,7 +235,7 @@ class StableChunkedDocumentFormulaExtractor:
     def extract_formulas_from_document(self, text: str) -> DocumentExtractionResult:
         """Extract formulas from large document using stable chunking strategy"""
         
-        if MOCK_MODE or not API_KEY:
+        if MOCK_MODE or not AZURE_API_KEY:
             return self._explain_no_extraction()
 
         try:
@@ -314,9 +331,8 @@ class StableChunkedDocumentFormulaExtractor:
         """Check if API is accessible with a minimal request"""
         try:
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=DEPLOYMENT_NAME,
                 messages=[{"role": "user", "content": "Test"}],
-                max_tokens=1
             )
             return True
         except Exception as e:
@@ -532,7 +548,7 @@ class StableChunkedDocumentFormulaExtractor:
         for model in models_to_try:
             try:
                 response = client.chat.completions.create(
-                    model=model,
+                    model=DEPLOYMENT_NAME,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=600,
                     temperature=0.1,
@@ -1404,7 +1420,7 @@ def main():
                                 st.session_state.extraction_result = None
                             else:
                                 # Only proceed with extraction if API key is configured
-                                if not MOCK_MODE and API_KEY:
+                                if not MOCK_MODE and AZURE_API_KEY:
                                     extractor = StableChunkedDocumentFormulaExtractor(target_outputs=st.session_state.selected_output_variables)
                                     extraction_result = extractor.extract_formulas_from_document(text)
                                                             
