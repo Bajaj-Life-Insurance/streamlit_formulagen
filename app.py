@@ -530,9 +530,9 @@ class StableChunkedDocumentFormulaExtractor:
         3. Extract the formula expression as accurately as possible, especially for Surrender, SSV and GSV.
         4. Include special conditions or multi-step logic if present
         5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning
-        6. Pay close attention to formulas involving:
+        6. Do NOT add information on your own. Use terms only mentioned in uploaded document and refer to reference variables whenever possible.                
+        7. Pay close attention to formulas involving:
         - terms around GSV, SSV, surrender values
-        - If GSV and SSV both exist for a specs, Surrender is most likely the higher of both
         - exponential terms like (1/1.05)^N
         - conditions like policy term > 3 years
         - Capital Units references
@@ -541,8 +541,6 @@ class StableChunkedDocumentFormulaExtractor:
         RESPONSE FORMAT:
         FORMULA_EXPRESSION: [mathematical expression using available variables]
         VARIABLES_USED: [comma-separated list of variables from available list]
-        DOCUMENT_EVIDENCE: [exact text from document supporting this formula]
-        BUSINESS_CONTEXT: [brief explanation of what this formula calculates]
         CONFIDENCE_LEVEL: [number between 0.1 and 1.0]
 
         Respond with only the requested format.If unsure about any part, explain why in the response.
