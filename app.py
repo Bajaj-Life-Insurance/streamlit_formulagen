@@ -528,20 +528,22 @@ class StableChunkedDocumentFormulaExtractor:
         1. Identify a mathematical formula or calculation method for "{formula_name}"
         2. Use the available variables where possible. If others are needed, explain why.
         3. Extract the formula expression as accurately as possible, especially for GSV and Surrender.
-        4. Include special conditions or multi-step logic if present
-        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning.               
-        6. Pay close attention to formulas involving:
-        - terms around GSV
+        4. Include special conditions or multi-step logic if present               
+        5. Pay close attention to formulas involving:
+        - Surrender value or GSV
         - exponential terms like (1/1.05)^N
         - conditions like policy term > 3 years
-        - Capital Units references
-        - on death mentions
+        - Capital Units references or on death mentions
 
         RESPONSE FORMAT:
         FORMULA_EXPRESSION: [mathematical expression using available variables]
-        VARIABLES_USED: [comma-separated list of variables from available list]
         CONFIDENCE_LEVEL: [number between 0.1 and 1.0]
 
+        EXAMPLE:
+        If the text says: 
+        > "The surrender value payable will be the higher of the guaranteed surrender value (GSV) or the special surrender value (SSV). 
+        You would output:
+        FORMULA_EXPRESSION: SURRENDER_PAID_AMOUNT= max(GSV, SSV)
         Respond with only the requested format.If unsure about any part, explain why in the response.
         """
         
