@@ -527,11 +527,10 @@ class StableChunkedDocumentFormulaExtractor:
         INSTRUCTIONS:
         1. Identify a mathematical formula or calculation method for "{formula_name}"
         2. Use the available variables where possible. If others are needed, explain why.
-        3. Extract the formula expression as accurately as possible, especially for GSV.
+        3. Extract the formula expression as accurately as possible, especially for GSV and Surrender.
         4. Include special conditions or multi-step logic if present
-        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning. Do NOT skip formulas randomly.
-        6. Do NOT add information on your own. Use terms only mentioned in uploaded document and refer to reference variables whenever possible.                
-        7. Pay close attention to formulas involving:
+        5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning.               
+        6. Pay close attention to formulas involving:
         - terms around GSV
         - exponential terms like (1/1.05)^N
         - conditions like policy term > 3 years
