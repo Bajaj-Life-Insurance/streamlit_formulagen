@@ -526,7 +526,7 @@ class StableChunkedDocumentFormulaExtractor:
     
         INSTRUCTIONS:
         1. Identify a mathematical formula or calculation method for "{formula_name}"
-        2. Use the available variables where possible. If others are needed, explain why.
+        2. Use the available variables where possible. Use new ones when none of the available variables match.
         3. Extract the formula expression as accurately as possible, especially for GSV and Surrender.
         4. Include special conditions or multi-step logic if present               
         5. Pay close attention to formulas involving:
