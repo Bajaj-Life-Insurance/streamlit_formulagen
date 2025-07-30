@@ -439,6 +439,7 @@ class StableChunkedDocumentFormulaExtractor:
         
         formula_specific_keywords = {
             'surrender': ['surrender', 'gsv', 'ssv', 'cash', 'quit', 'capital units', 'elapsed', 'policy term', '1.05', 'three years', 'redemption'],
+            'gsv':['gsv', 'ssv', 'gsv_factor'],
             'surrender_charge': ['surrender charge', 'capital units', '1.05', 'elapsed policy duration', 'policy term', 'three years', 'redemption'],
             'premium': ['premium', 'payment', 'annual', 'monthly'],
             'benefit': ['benefit', 'payout', 'income', 'amount'],
@@ -526,7 +527,7 @@ class StableChunkedDocumentFormulaExtractor:
         INSTRUCTIONS:
         1. Identify a mathematical formula or calculation method for "{formula_name}"
         2. Use the available variables where possible. If others are needed, explain why.
-        3. Extract the formula expression as accurately as possible
+        3. Extract the formula expression as accurately as possible, especially for Surrender, SSV and GSV.
         4. Include special conditions or multi-step logic if present
         5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning
         6. Pay close attention to formulas involving:
