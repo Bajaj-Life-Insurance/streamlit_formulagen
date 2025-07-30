@@ -530,6 +530,7 @@ class StableChunkedDocumentFormulaExtractor:
         4. Include special conditions or multi-step logic if present
         5. If no formula is clearly defined, respond with "FORMULA_NOT_FOUND" and give reasoning
         6. Pay close attention to formulas involving:
+        - terms around GSV, SSV, surrender values
         - exponential terms like (1/1.05)^N
         - conditions like policy term > 3 years
         - Capital Units references
