@@ -537,7 +537,6 @@ class StableChunkedDocumentFormulaExtractor:
 
         RESPONSE FORMAT:
         FORMULA_EXPRESSION: [mathematical expression using available variables]
-        CONFIDENCE_LEVEL: [number between 0.1 and 1.0]
 
         EXAMPLE:
         If the text says: 
