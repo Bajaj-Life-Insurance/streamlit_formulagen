@@ -528,7 +528,7 @@ class StableChunkedDocumentFormulaExtractor:
         1. Identify a mathematical formula or calculation method for "{formula_name}"
         2. Use the available variables where possible. Use new ones when none of the available variables match.
         3. Extract the formula expression as accurately as possible, especially for GSV and Surrender.
-        4. Include special conditions or multi-step logic if present               
+        4. Include special conditions if present               
         5. Pay close attention to formulas involving:
         - Surrender value or GSV
         - exponential terms like (1/1.05)^N
@@ -603,7 +603,7 @@ class StableChunkedDocumentFormulaExtractor:
             
             # Extract confidence level
             confidence_match = re.search(r'CONFIDENCE_LEVEL:\s*([0-9]*\.?[0-9]+)', response_text, re.IGNORECASE)
-            confidence = float(confidence_match.group(1)) if confidence_match else 0.4
+            confidence = float(confidence_match.group(1)) if confidence_match else 0.9
             
             return ExtractedFormula(
                 formula_name=formula_name.upper(),
